@@ -12,7 +12,12 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        // Expire reservations past their pickup/queue deadline, and promote
+        // the next member in line. Runs daily.
+        $schedule->command('reservations:expire')->daily();
+
+        // Send a daily reminder to members with overdue books.
+        $schedule->command('notifications:overdue')->dailyAt('08:00');
     }
 
     /**

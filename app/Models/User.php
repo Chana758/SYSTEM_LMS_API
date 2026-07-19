@@ -18,7 +18,6 @@ class User extends Authenticatable
      *
      * @var array<int, string>
      */
-    // Fields allowed for Mass Assignment
     protected $fillable = [
         'name',
         'email',
@@ -67,5 +66,16 @@ class User extends Authenticatable
     public function librarian()
     {
         return $this->hasOne(Librarian::class);
+    }
+
+    // One User -> One UserPreference (added)
+    public function preference()
+    {
+        return $this->hasOne(UserPreference::class);
+    }
+
+    public function notifications()
+    {
+        return $this->hasMany(Notification::class);
     }
 }

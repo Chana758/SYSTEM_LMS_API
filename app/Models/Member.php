@@ -5,11 +5,18 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Member extends Model
 {
-    use HasFactory,SoftDeletes;
-    // Fields allowed for Mass Assignment
+    use HasFactory, SoftDeletes;
+
+    /**
+     * The attributes that are mass assignable.
+     *
+     * @var array<int, string>
+     */
     protected $fillable = [
         'user_id',
         'membership_no',
@@ -24,15 +31,29 @@ class Member extends Model
         'remarks',
     ];
 
-    // The attributes that should be cast.
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array<string, string>
+     */
     protected $casts = [
-        'join_date' => 'date',
+        'join_date'   => 'date',
         'expiry_date' => 'date',
     ];
-    // Many Members -> One User
-    // Foreign Key: user_id
-    public function user()
+
+    /**
+     * Get the user that owns the member profile.
+     */
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the reservations associated with the member.
+     */
+    public function reservations(): HasMany
+    {
+        return $this->hasMany(Reservation::class);
     }
 }

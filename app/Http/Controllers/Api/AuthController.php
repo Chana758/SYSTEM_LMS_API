@@ -9,10 +9,11 @@ use App\Models\Librarian;
 use App\Models\Member;
 use App\Models\Role;
 use App\Models\User;
+use Illuminate\Http\Request; //add new
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-
+use Illuminate\Validation\Rules\Password;
 class AuthController extends Controller
 {
     public function register(RegisterRequest $request)
@@ -208,5 +209,50 @@ class AuthController extends Controller
         
         return $no;
     }
+
+    /**
+ * Change the authenticated user's password.
+ */
+public function changePassword(Request $request)
+{
+    // Validate the incoming request
+    $request->validate([
+        // Current password is required
+        'current_password' => ['required'],
+
+        // New password is required, must be confirmed,
+        // and must contain at least 8 characters
+        'password' => ['required', 'confirmed', Password::min(8)],
+    ]);
+
+    // Get the currently authenticated user
+    $user = $request->user();
+
+    // Verify that the provided current password matches
+    // the user's existing password in the database
+    if (! Hash::check($request->current_password, $user->password)) {
+
+        return response()->json([
+            'message' => 'The provided password does not match your current password.',
+            'errors' => [
+                'current_password' => [
+                    'Current password is incorrect.',
+                ],
+            ],
+        ], 422);
+    }
+
+    // Update the user's password
+    // The password is automatically hashed by the model cast
+    $user->update([
+        'password' => $request->password,
+    ]);
+
+    // Return a success response
+    return response()->json([
+        'message' => 'Password updated successfully.',
+    ]);
+}
+    
 }
  
