@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Fine\StoreFineRequest;
 use App\Models\Fine;
 use App\Models\Member;
+use App\Support\CurrencyHelper;
 use Illuminate\Http\Request;
 
 class FineController extends Controller
@@ -24,10 +25,6 @@ class FineController extends Controller
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
-    /**
-     * Member's own fines — no admin/librarian role required.
-     * GET /api/my-fines
-     */
     public function myFines(Request $request)
     {
         $member = Member::where('user_id', $request->user()->id)->firstOrFail();
@@ -41,9 +38,24 @@ class FineController extends Controller
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
+    /**
+     *  FIX: manual fine creation (admin/librarian issuing a fine outside
+     * the borrow/return flow) now also goes through CurrencyHelper.
+     * Previously this was the ONE remaining gap where a Riel amount
+     * entered on the admin form would be stored directly as USD —
+     * exactly the inconsistency CurrencyHelper was built to prevent.
+     *
+     * `amount` in the request is treated as the RAW Riel value coming
+     * from the frontend form (same convention as ReturnForm.vue's
+     * damage_fee / lost_fee — no pre-conversion on the frontend side).
+     */
     public function store(StoreFineRequest $request)
     {
-        $fine = Fine::create($request->validated());
+        $validated = $request->validated();
+        $validated['amount'] = CurrencyHelper::khrToUsd($validated['amount']);
+
+        $fine = Fine::create($validated);
+
         return response()->json([
             'message' => 'Fine created successfully.',
             'data' => $fine->load('borrow.member.user', 'borrow.bookCopy.book'),

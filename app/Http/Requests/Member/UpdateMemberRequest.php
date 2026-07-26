@@ -29,7 +29,10 @@ class UpdateMemberRequest extends FormRequest
             'phone'             => ['nullable', 'string', 'max:20'],
             'identity_card_no'  => ['nullable', 'string', 'max:30'],
             'emergency_contact' => ['nullable', 'string', 'max:20'],
-            'membership_type'   => ['sometimes', 'string', 'in:student,teacher,external'],
+            // FIX: was 'in:student,teacher,external' — now validated
+            // against the membership_types master table instead, same
+            // reasoning as StoreMemberRequest above.
+            'membership_type'   => ['sometimes', 'string', 'exists:membership_types,code'],
             'max_borrow_limit'  => ['nullable', 'integer', 'min:1', 'max:20'],
             'address'           => ['nullable', 'string', 'max:255'],
             'expiry_date'       => ['nullable', 'date'],
@@ -44,9 +47,10 @@ class UpdateMemberRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.unique'       => 'This email address is already associated with another member.',
-            'membership_type.in' => 'The selected membership type is invalid.',
-            'status.in'          => 'The selected status is invalid.',
+            'email.unique'           => 'This email address is already associated with another member.',
+            // FIX: message updated to match the new exists: rule.
+            'membership_type.exists' => 'The selected membership type is invalid or no longer available.',
+            'status.in'              => 'The selected status is invalid.',
         ];
     }
 }

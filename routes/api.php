@@ -4,7 +4,7 @@ use App\Http\Controllers\Api\{
     AccountController, AuthController, AvatarController, BackupController,
     BookController, BookReviewController, BorrowController, CategoryController,
     DashboardController, EbookController, EbookFavoriteController, FineController,
-    LibrarianController, MemberController, NotificationController, PreferenceController,
+    LibrarianController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
     ReportController,
     ReservationController, ScanController, SettingController
 };
@@ -20,6 +20,9 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
+
+    Route::post('login/qr', [AuthController::class, 'loginWithQr']);
+
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('me', [AuthController::class, 'me']);
@@ -28,9 +31,17 @@ Route::prefix('auth')->group(function () {
         Route::post('profile/avatar', [AvatarController::class, 'update']);
         Route::delete('profile/avatar', [AvatarController::class, 'destroy']);
 
-        // Personal preferences (dark mode, notification toggles) — any authenticated user
         Route::get('profile/preferences', [PreferenceController::class, 'show']);
         Route::put('profile/preferences', [PreferenceController::class, 'update']);
+
+        Route::post('qr-token/generate', [AuthController::class, 'generateQrToken']);
+        Route::post('qr-token/revoke', [AuthController::class, 'revokeQrToken']);
+
+        Route::middleware('role:admin,librarian')
+            ->post('users/{user}/qr-token/generate', [AuthController::class, 'generateQrTokenFor']);
+
+        Route::middleware('role:admin,librarian')
+            ->get('pending-cards', [AuthController::class, 'pendingCards']);
 
         Route::middleware('role:admin')->post('create-librarian', [AuthController::class, 'createLibrarian']);
     });
@@ -81,12 +92,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // 4. CIRCULATION: RESERVATIONS
 Route::middleware('auth:sanctum')->prefix('reservations')->group(function () {
-    // Member routes
     Route::get('/my-list', [ReservationController::class, 'myReservations']);
     Route::post('/', [ReservationController::class, 'store']);
     Route::post('{reservation}/cancel', [ReservationController::class, 'cancel']);
 
-    // Admin/Librarian routes
     Route::middleware('role:admin,librarian')->group(function () {
         Route::get('/', [ReservationController::class, 'index']);
         Route::get('{reservation}', [ReservationController::class, 'show']);
@@ -96,7 +105,6 @@ Route::middleware('auth:sanctum')->prefix('reservations')->group(function () {
 
 // 4.5. DIGITAL LIBRARY: EBOOKS
 Route::middleware('auth:sanctum')->prefix('ebooks')->group(function () {
-    // Shared (any authenticated user — member/librarian/admin)
     Route::get('/', [EbookController::class, 'index']);
     Route::get('{ebook}', [EbookController::class, 'show']);
     Route::post('{ebook}/download', [EbookController::class, 'download']);
@@ -104,8 +112,6 @@ Route::middleware('auth:sanctum')->prefix('ebooks')->group(function () {
     Route::put('{ebook}/progress', [EbookController::class, 'updateProgress']);
     Route::post('{ebook}/favorite', [EbookFavoriteController::class, 'toggle']);
 
-
-    // Admin/Librarian only — manage e-book catalog entries
     Route::middleware('role:admin,librarian')->group(function () {
         Route::post('/', [EbookController::class, 'store']);
         Route::put('{ebook}', [EbookController::class, 'update']);
@@ -113,16 +119,10 @@ Route::middleware('auth:sanctum')->prefix('ebooks')->group(function () {
     });
 });
 
-// Signed-URL protected file streaming — NOT nested under the ebooks prefix
-// group above because it must NOT require 'auth:sanctum'. Access control
-// instead comes entirely from the temporary signature (see
-// EbookController::download(), which generates this URL and expires it
-// after 10 minutes). Kept outside the prefix() group intentionally.
 Route::get('ebooks/{ebook}/stream', [EbookController::class, 'stream'])
     ->name('ebooks.stream')
     ->middleware('signed');
 
-// Member's own favorited e-books list.
 Route::middleware('auth:sanctum')->get('/my-favorites', [EbookFavoriteController::class, 'index']);
 
 // 5. USER MANAGEMENT
@@ -135,15 +135,22 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('members')->
     Route::post('{id}/restore', [MemberController::class, 'restore']);
 });
 
-// 5.5. MEMBER SELF-SERVICE PROFILE
-// FIX: was completely missing. MyProfilePage.vue on the frontend already
-// calls store.fetchMyProfile(), but there was no backend route for it to
-// hit. Kept deliberately outside the admin/librarian-only group above —
-// any authenticated member can view their OWN profile here, read-only.
-// No PUT route exists on purpose: MyProfilePage.vue is read-only by
-// design (tells the member to contact a librarian to change details),
-// so there is no self-edit surface to secure/validate here at all.
 Route::middleware('auth:sanctum')->get('/member/profile', [MemberController::class, 'myProfile']);
+
+// 5.6. MEMBERSHIP TYPES (master data for Member forms)
+// FIX: new — was previously hardcoded as Rule::in(['student','teacher',
+// 'external']) inside StoreMemberRequest/UpdateMemberRequest. Now backed
+// by a real table so admin can add/rename/retire types from the
+// Membership Types settings page without a code change or deploy.
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('membership-types', [MembershipTypeController::class, 'index']);
+
+    Route::middleware('role:admin')->group(function () {
+        Route::post('membership-types', [MembershipTypeController::class, 'store']);
+        Route::put('membership-types/{membershipType}', [MembershipTypeController::class, 'update']);
+        Route::delete('membership-types/{membershipType}', [MembershipTypeController::class, 'destroy']);
+    });
+});
 
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('librarians')->group(function () {
     Route::get('/', [LibrarianController::class, 'index']);
@@ -163,16 +170,12 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('fines')->gr
     Route::post('{fine}/waive', [FineController::class, 'waive']);
 });
 
-// Member's own fines — kept outside the admin/librarian-only group above
-// so a plain authenticated member can view their own fine history.
 Route::middleware('auth:sanctum')->get('/my-fines', [FineController::class, 'myFines']);
 
 // 6.5. SCANNER
 Route::middleware('auth:sanctum')->prefix('scan')->group(function () {
-    // Any authenticated user (staff scanning at desk uses their own login)
     Route::post('/', [ScanController::class, 'store']);
 
-    // Admin/Librarian only — view scan audit log + summary stats
     Route::middleware('role:admin,librarian')->group(function () {
         Route::get('history', [ScanController::class, 'index']);
         Route::get('summary', [ScanController::class, 'summary']);
@@ -181,14 +184,11 @@ Route::middleware('auth:sanctum')->prefix('scan')->group(function () {
 
 // 7. SETTINGS & MISC
 Route::middleware('auth:sanctum')->prefix('settings')->group(function () {
-
-    // Admin + Librarian — view settings (librarian is filtered inside the controller)
     Route::middleware('role:admin,librarian')->group(function () {
         Route::get('/', [SettingController::class, 'index']);
         Route::get('backup/history', [BackupController::class, 'index']);
     });
 
-    // Admin only — mutate settings & perform backup operations
     Route::middleware('role:admin')->group(function () {
         Route::post('/', [SettingController::class, 'store']);
         Route::put('{setting}', [SettingController::class, 'update']);
@@ -199,9 +199,20 @@ Route::middleware('auth:sanctum')->prefix('settings')->group(function () {
     });
 });
 
-Route::middleware(['auth:sanctum', 'role:admin,librarian'])->get('dashboard', [DashboardController::class, 'index']);
+// 8. DASHBOARD
+// FIX: was a single Route::get('dashboard', ...) line only covering the
+// stats endpoint. Expanded into a prefix('dashboard') group with the two
+// additional endpoints (recent-activities, revenue-chart) that
+// dashboardStore.js's fetchRecentActivities() and fetchRevenueChart()
+// already call, backed now by DashboardController::recentActivities()
+// and DashboardController::revenueChart().
+Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('dashboard')->group(function () {
+    Route::get('/', [DashboardController::class, 'index']);
+    Route::get('recent-activities', [DashboardController::class, 'recentActivities']);
+    Route::get('revenue-chart', [DashboardController::class, 'revenueChart']);
+});
 
-// 8. NOTIFICATIONS
+// 9. NOTIFICATIONS
 Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
     Route::get('/', [NotificationController::class, 'index']);
     Route::get('unread-count', [NotificationController::class, 'unreadCount']);
@@ -213,7 +224,7 @@ Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
     Route::middleware('role:admin,librarian')->post('/', [NotificationController::class, 'store']);
 });
 
-// 9. ADMIN REPORTS 
+// 10. ADMIN REPORTS
 Route::middleware(['auth:sanctum', 'role:admin,librarian'])
     ->prefix('admin/reports')
     ->group(function () {

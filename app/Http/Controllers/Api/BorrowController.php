@@ -11,6 +11,7 @@ use App\Models\Librarian;
 use App\Models\Member;
 use App\Models\Notification;
 use App\Models\Reservation;
+use App\Support\CurrencyHelper;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,14 +19,10 @@ use Illuminate\Support\Facades\DB;
 class BorrowController extends Controller
 {
     protected int $borrowDays = 14;
-    protected int $finePerDay = 500;
+    protected int $finePerDay = 500; // ៛/day — បំលែងទៅ USD ត្រង់ returnBook()
     protected int $maxRenewals = 2;
     protected int $renewDays = 7;
 
-    /**
-     * Admin/Librarian — full list of transactions.
-     * Supports: status, search, from/to date range (used by Borrow History page).
-     */
     public function index(Request $request)
     {
         $query = BorrowTransaction::with(['member.user', 'bookCopy.book.category', 'librarian.user', 'fines'])
@@ -43,7 +40,6 @@ class BorrowController extends Controller
             });
         }
 
-        // Date range filter — used by BorrowHistoryPage.vue
         if ($request->filled('from')) {
             $query->whereDate('borrow_date', '>=', $request->from);
         }
@@ -54,9 +50,6 @@ class BorrowController extends Controller
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
-    /**
-     * Retrieve a list of overdue transactions.
-     */
     public function overdue(Request $request)
     {
         $query = BorrowTransaction::with(['member.user', 'bookCopy.book.category'])
@@ -67,9 +60,6 @@ class BorrowController extends Controller
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
-    /**
-     * Member — only their own borrow history.
-     */
     public function myBorrows(Request $request)
     {
         $member = Member::where('user_id', $request->user()->id)->firstOrFail();
@@ -82,9 +72,6 @@ class BorrowController extends Controller
         return response()->json($borrows);
     }
 
-    /**
-     * Admin/Librarian issues a new borrow on behalf of a member.
-     */
     public function store(StoreBorrowRequest $request)
     {
         return DB::transaction(function () use ($request) {
@@ -99,7 +86,6 @@ class BorrowController extends Controller
                 return response()->json(['message' => 'This member has already borrowed this book.'], 422);
             }
 
-            // Ensure the book copy is available
             $bookCopy = BookCopy::where('book_id', $request->book_id)
                 ->where('status', 'available')
                 ->lockForUpdate()
@@ -109,13 +95,11 @@ class BorrowController extends Controller
                 return response()->json(['message' => 'This book is currently out of stock.'], 422);
             }
 
-            // Check if THIS member has their own 'ready' reservation for this book
             $ownReservation = Reservation::where('book_id', $request->book_id)
                 ->where('member_id', $member->id)
                 ->where('status', 'ready')
                 ->first();
 
-            // Block if someone ELSE has a 'ready' reservation on this book
             $blockedByOther = Reservation::where('book_id', $request->book_id)
                 ->where('status', 'ready')
                 ->where('member_id', '!=', $member->id)
@@ -142,7 +126,6 @@ class BorrowController extends Controller
             $bookCopy->update(['status' => 'borrowed']);
             $bookCopy->book()->decrement('available_qty');
 
-            // If this borrow fulfills the member's own reservation, mark it fulfilled
             if ($ownReservation) {
                 $ownReservation->update(['status' => 'fulfilled']);
             }
@@ -159,17 +142,10 @@ class BorrowController extends Controller
         return response()->json($borrow->load(['member.user', 'bookCopy.book.category', 'librarian.user', 'fines']));
     }
 
-    /**
-     * Renew: Admin/Librarian can renew any transaction.
-     * Member can only renew their OWN transaction.
-     */
     public function renew(Request $request, BorrowTransaction $borrow)
     {
         $user = $request->user();
 
-        // Verify ownership if the user is a member
-        // NOTE: $user->role is a Role model instance (belongsTo), so compare
-        // $user->role?->name — not $user->role directly — or this always fails.
         if ($user->role?->name === 'member') {
             $member = Member::where('user_id', $user->id)->firstOrFail();
             if ($borrow->member_id !== $member->id) {
@@ -189,7 +165,6 @@ class BorrowController extends Controller
             return response()->json(['message' => "Maximum renewal limit ({$this->maxRenewals}) reached."], 422);
         }
 
-        // Prevent renewal if others are waiting for the book
         $hasQueuedReservation = Reservation::where('book_id', $borrow->bookCopy->book_id)
             ->whereIn('status', ['pending', 'ready'])
             ->exists();
@@ -209,6 +184,16 @@ class BorrowController extends Controller
         ]);
     }
 
+    /**
+     * FIX: All fine amounts (overdue, damaged, lost) are now converted
+     * from Riel to USD via CurrencyHelper::khrToUsd() at the ONE place
+     * they're created — the backend. Previously overdue fines were never
+     * converted at all (500៛/day stored as $500/day), and damaged/lost
+     * fines relied on the frontend to pre-convert, which was fragile and
+     * inconsistent (a direct API call, e.g. from Postman or a future
+     * integration, would bypass the frontend conversion entirely and
+     * store raw Riel as USD again).
+     */
     public function returnBook(Request $request, BorrowTransaction $borrow)
     {
         if ($borrow->status === 'returned') {
@@ -227,9 +212,6 @@ class BorrowController extends Controller
             $copyStatus = $condition === 'lost' ? 'lost' : ($condition === 'damaged' ? 'damaged' : 'available');
             $borrow->bookCopy->update(['status' => $copyStatus]);
 
-            // Uses ReservationController::promoteNextInQueue() — schema has no `ready_at` column,
-            // that method correctly writes to `expire_date` as the pickup deadline instead,
-            // and also fires the "book ready" notification to the next member in line.
             if ($copyStatus === 'available') {
                 $borrow->bookCopy->book()->increment('available_qty');
 
@@ -239,46 +221,53 @@ class BorrowController extends Controller
 
             $createdFines = [];
 
-            // Apply late fine
+            // ✅ FIX: bằng khrToUsd() — trước đây gán thẳng số Riel vào cột USD
             if ($daysLate > 0) {
                 $createdFines[] = Fine::create([
                     'borrow_id' => $borrow->id,
-                    'amount'    => $daysLate * $this->finePerDay,
+                    'amount'    => CurrencyHelper::khrToUsd($daysLate * $this->finePerDay),
                     'reason'    => 'overdue',
                     'status'    => 'unpaid',
                 ]);
             }
 
-            // Apply damage fee
+            //  FIX: $request->input('damage_fee') is now the RAW Riel value
+            // sent by ReturnForm.vue (frontend no longer pre-converts —
+            // see ReturnForm.vue below). Converted here, once, in one place.
             if ($condition === 'damaged') {
                 $createdFines[] = Fine::create([
                     'borrow_id' => $borrow->id,
-                    'amount'    => $request->input('damage_fee', 5000),
+                    'amount'    => CurrencyHelper::khrToUsd($request->input('damage_fee', 5000)),
                     'reason'    => 'damaged',
                     'status'    => 'unpaid',
                     'notes'     => $request->input('notes'),
                 ]);
             }
 
-            // Apply lost fee
             if ($condition === 'lost') {
+                $lostFeeKhr = $request->input('lost_fee', $borrow->bookCopy->book->price ?? 15000);
                 $createdFines[] = Fine::create([
                     'borrow_id' => $borrow->id,
-                    'amount'    => $request->input('lost_fee', $borrow->bookCopy->book->price ?? 15000),
+                    'amount'    => CurrencyHelper::khrToUsd($lostFeeKhr),
                     'reason'    => 'lost',
                     'status'    => 'unpaid',
                     'notes'     => $request->input('notes'),
                 ]);
             }
 
-            $totalFine = collect($createdFines)->sum('amount');
+            $totalFineUsd = collect($createdFines)->sum('amount');
 
-            // Notify the member if any fine was created
-            if ($totalFine > 0) {
+            // FIX: notification message now shows $ — totalFine is USD
+            // after conversion, not the raw Riel figure anymore.
+            if ($totalFineUsd > 0) {
                 Notification::create([
                     'user_id' => $borrow->member->user_id,
                     'title'   => 'You have a new fine',
-                    'message' => "A fine of {$totalFine}៛ was applied for \"{$borrow->bookCopy->book->title}\".",
+                    'message' => sprintf(
+                        'A fine of $%.2f was applied for "%s".',
+                        $totalFineUsd,
+                        $borrow->bookCopy->book->title
+                    ),
                     'type'    => 'fine',
                     'link'    => '/my-fines',
                     'is_read' => false,
@@ -287,8 +276,8 @@ class BorrowController extends Controller
             }
 
             return response()->json([
-                'message' => $totalFine > 0
-                    ? "Book returned successfully (Total fines: {$totalFine})."
+                'message' => $totalFineUsd > 0
+                    ? sprintf('Book returned successfully (Total fines: $%.2f).', $totalFineUsd)
                     : 'Book returned successfully.',
                 'data' => $borrow->fresh()->load(['member.user', 'bookCopy.book.category', 'fines']),
             ]);

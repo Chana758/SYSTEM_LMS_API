@@ -4,152 +4,237 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Http\Requests\Auth\QrLoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Models\Librarian;
 use App\Models\Member;
 use App\Models\Role;
 use App\Models\User;
-use Illuminate\Http\Request; //add new
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+
 class AuthController extends Controller
 {
+    private const QR_TOKEN_LIFETIME_DAYS = 90;
+
     public function register(RegisterRequest $request)
     {
-        // Validate all request data
-        $validated=$request->validated();
+        $validated = $request->validated();
 
-        // Find the "member" role or create it if it does not exist
-        $memberRole= Role::firstOrCreate(['name'=>'member']);
+        $memberRole = Role::firstOrCreate(['name' => 'member']);
 
-        // Create User and Member in a single database transaction
-        $user=DB::transaction(function() use($validated,$memberRole){
-
-             // Create a new user account
-            $user=User::create([
-                'name'=>$validated['name'],// get data from validated request
-                'email'=>$validated['email'],
-                'password'=>Hash::make($validated['password']),
-                'phone'=>$validated['phone']?? null,
-                'role_id'=>$memberRole->id,
-                'status'=>'active',
+        $user = DB::transaction(function () use ($validated, $memberRole) {
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'phone' => $validated['phone'] ?? null,
+                'role_id' => $memberRole->id,
+                'status' => 'active',
             ]);
 
-            // create the member profile
             Member::create([
-                'user_id'=>$user->id,
-                'membership_no'=>$this->generateMembershipNo(),
-                'membership_type'=>$validated['membership_type'] ?? 'student',
-                'max_borrow_limit'=>3,
-                'join_date'=>now(),
-                'status'=>'active',
+                'user_id' => $user->id,
+                'membership_no' => $this->generateMembershipNo(),
+                'membership_type' => $validated['membership_type'] ?? 'student',
+                'max_borrow_limit' => 3,
+                'join_date' => now(),
+                'status' => 'active',
             ]);
 
-            
             return $user;
         });
 
-        // Generate laravel sanctum token for the user
+        // NOTE: no QR token is generated here anymore. Self-registered
+        // users start with qr_login_token = null (has_qr_card = false)
+        // and appear in pendingCards() below until an admin/librarian
+        // issues their card via generateQrTokenFor(). This is the core
+        // of the new "admin approves first" requirement — regardless of
+        // whether an account was created by registering here or by
+        // CreateMemberModal.vue, the card itself is only ever issued
+        // through generateQrToken()/generateQrTokenFor(), and the ONLY
+        // path that used to bypass staff involvement (auto-issuing right
+        // after self-registration) has been removed on the frontend
+        // (see RegisterPage.vue).
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        // Return succrssful response with user data and token
         return response()->json([
             'message' => 'User registered successfully',
-            'user' => $user->load('role','member','librarian'),
+            'user' => $user->load('role', 'member', 'librarian'),
             'token_type' => 'Bearer',
             'access_token' => $token,
         ], 201);
     }
 
-   /**
-     * Log in an existing user.
-     * Public endpoint — works the same for member, librarian, and admin.
-     */
     public function login(LoginRequest $request)
     {
-        // validate tyhe login request (*email and password )
-        $credentials=$request->validated();
+        $credentials = $request->validated();
 
-        // Check if the provided creadentials are valid
-        if(!Auth::attempt($credentials)){
-            return response()->json([
-                'message'=>'Invalid email or password',
-            ],401);
+        if (! Auth::attempt($credentials)) {
+            return response()->json(['message' => 'Invalid email or password'], 401);
         }
 
-        // Retrive the authenticated user by email
-        $user=User::where('email',$credentials['email'])->firstOrFail();
-        
-        // Ensure the user account is active before allowing login
-        if($user->status !== 'active'){
-            return response()->json([
-                'message'=>'Your account is not active (inactive/suspended)',
-            ],403);
+        $user = User::where('email', $credentials['email'])->firstOrFail();
+
+        if ($user->status !== 'active') {
+            return response()->json(['message' => 'Your account is not active (inactive/suspended)'], 403);
         }
 
-        // Update the user's last login timestamp to the current time
-        $user->update(['last_login_at'=>now()]);
+        $user->update(['last_login_at' => now()]);
 
-        // Generate laravel sanctum token for the user
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        // Return authenticated user information and access token in the response
         return response()->json([
             'message' => 'Login successful',
-            'user' => $user->load('role','member','librarian'),
+            'user' => $user->load('role', 'member', 'librarian'),
             'token_type' => 'Bearer',
             'access_token' => $token,
         ], 200);
     }
-    
-    /**
-     * Log out the current user.
-     * Requires a valid token (auth:sanctum) — deletes only the current access token.
-     */
-    public function logout()
-    {
-        // delete the current user's active access token
-        Auth()->user()->currentAccessToken()->delete();
 
-        // Return a successful logout response
+    public function loginWithQr(QrLoginRequest $request)
+    {
+        $validated = $request->validated();
+        $hashedToken = $this->hashQrToken($validated['qr_token']);
+        $user = User::where('qr_login_token', $hashedToken)->first();
+
+        if (! $user) {
+            return response()->json(['message' => 'This QR code is invalid or no longer recognized.'], 401);
+        }
+
+        if (! $user->qr_login_token_expires_at || $user->qr_login_token_expires_at->isPast()) {
+            return response()->json(['message' => 'This QR code has expired. Please request a new one.'], 401);
+        }
+
+        if ($user->status !== 'active') {
+            return response()->json(['message' => 'Your account is not active (inactive/suspended)'], 403);
+        }
+
+        $user->update(['last_login_at' => now()]);
+        $token = $user->createToken('auth_token_qr')->plainTextToken;
+
         return response()->json([
-            'message' => 'Logout successfully',
+            'message' => 'Login successful',
+            'user' => $user->load('role', 'member', 'librarian'),
+            'token_type' => 'Bearer',
+            'access_token' => $token,
+        ], 200);
+    }
+
+    public function generateQrToken(Request $request)
+    {
+        $user = $request->user();
+        $rawToken = Str::random(48);
+
+        $user->update([
+            'qr_login_token' => $this->hashQrToken($rawToken),
+            'qr_login_token_expires_at' => now()->addDays(self::QR_TOKEN_LIFETIME_DAYS),
+        ]);
+
+        return response()->json([
+            'message' => 'QR login token generated successfully',
+            'qr_token' => $rawToken,
+            'expires_at' => $user->qr_login_token_expires_at,
+        ], 200);
+    }
+
+    public function generateQrTokenFor(Request $request, User $user)
+    {
+        $actor = $request->user();
+
+        if ($actor->role->name === 'librarian' && $user->role->name !== 'member') {
+            return response()->json([
+                'message' => 'Librarians can only issue QR cards for members.',
+            ], 403);
+        }
+
+        $rawToken = Str::random(48);
+
+        $user->update([
+            'qr_login_token' => $this->hashQrToken($rawToken),
+            'qr_login_token_expires_at' => now()->addDays(self::QR_TOKEN_LIFETIME_DAYS),
+        ]);
+
+        return response()->json([
+            'message' => 'QR login token generated successfully',
+            'qr_token' => $rawToken,
+            'expires_at' => $user->qr_login_token_expires_at,
+            'user' => $user->only('id', 'name'),
         ], 200);
     }
 
     /**
-     * Get the currently authenticated user's info.
-     * Requires a valid token (auth:sanctum).
+     * NEW — GET /auth/pending-cards
+     * Admin/Librarian only. Lists every member/librarian whose account
+     * exists but has NO active QR card yet (has_qr_card = false) —
+     * primarily self-registered members from RegisterPage.vue, since
+     * CreateMemberModal.vue/CreateLibrarianModal.vue already issue a
+     * card immediately as part of the admin/librarian's own action.
+     *
+     * This is the "approval queue" the front desk works through: for
+     * each row here, staff click "Issue Card" (which calls
+     * generateQrTokenFor() above) to finally activate a printable QR
+     * card for that person.
+     *
+     * Librarians only see members here (same scoping as
+     * generateQrTokenFor()'s 403 rule) — they can never approve/issue
+     * a card for another librarian or admin account.
      */
-    public function me(){
+    public function pendingCards(Request $request)
+    {
+        $actor = $request->user();
 
-     // Return the authenticated user with related role, member, and librarian data
-        return response()->json([
-            'user'=>Auth()->user()->load('role','member','librarian'),
-        ],200);
+        $query = User::with(['role', 'member', 'librarian'])
+            ->whereNull('qr_login_token')
+            ->whereHas('role', function ($q) use ($actor) {
+                if ($actor->role->name === 'librarian') {
+                    $q->where('name', 'member');
+                } else {
+                    $q->whereIn('name', ['member', 'librarian']);
+                }
+            });
+
+        return response()->json(
+            $query->latest()->paginate($request->get('per_page', 15))
+        );
     }
 
+    public function revokeQrToken(Request $request)
+    {
+        $request->user()->update([
+            'qr_login_token' => null,
+            'qr_login_token_expires_at' => null,
+        ]);
 
-    /**
-     * Admin creates a new Librarian account.
-     * Requires a valid token AND role = admin
-     * (protected by the 'role:admin' middleware in api.php).
-     */
+        return response()->json(['message' => 'QR login token revoked successfully'], 200);
+    }
+
+    private function hashQrToken(string $rawToken): string
+    {
+        return hash('sha256', $rawToken);
+    }
+
+    public function logout()
+    {
+        Auth()->user()->currentAccessToken()->delete();
+        return response()->json(['message' => 'Logout successfully'], 200);
+    }
+
+    public function me()
+    {
+        return response()->json(['user' => Auth()->user()->load('role', 'member', 'librarian')], 200);
+    }
+
     public function createLibrarian(RegisterRequest $request)
     {
-        // Validate all incoming request data
         $validated = $request->validated();
-        
-         // Find the "librarian" role or create it if it does not exist
         $librarianRole = Role::firstOrCreate(['name' => 'librarian']);
 
-        // Create User and Librarian profile in a single database transaction
-        // If any step fails, all changes will be rolled back
-        $user =DB::transaction(function() use($validated,$librarianRole){
-
-            // Create a new user account for the librarian
+        $user = DB::transaction(function () use ($validated, $librarianRole) {
             $user = User::create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
@@ -159,100 +244,55 @@ class AuthController extends Controller
                 'status' => 'active',
             ]);
 
-            // Create the librarian profile associated with the user
             Librarian::create([
                 'user_id' => $user->id,
                 'employee_id' => $this->generateEmployeeId(),
                 'status' => 'active',
             ]);
 
-            
             return $user;
         });
 
-        // Generate laravel sanctum token for the new librarian user
         return response()->json([
             'message' => 'Librarian created successfully',
             'user' => $user->load('role', 'librarian'),
         ], 201);
     }
-     /**
-     * Auto-generate a unique membership number, e.g. MEM-2026-000123
-     */
+
     private function generateMembershipNo(): string
     {
-        // Generate a membership number and check if it already exists
         do {
-            // Create format: MEM-YEAR-RANDOM_NUMBER
             $no = 'MEM-' . date('Y') . '-' . str_pad(random_int(1, 999999), 6, '0', STR_PAD_LEFT);
-        
-            // Repeat generating a new number if the membership number already exists
         } while (Member::where('membership_no', $no)->exists());
-
-       
         return $no;
     }
 
-    /**
-     * Auto-generate a unique employee ID, e.g. EMP-2026-0042
-     */
     private function generateEmployeeId(): string
     {
-        // Generate an employee ID and check if it already exists
         do {
-            // Create format: EMP-YEAR-RANDOM_NUMBER
             $no = 'EMP-' . date('Y') . '-' . str_pad(random_int(1, 9999), 4, '0', STR_PAD_LEFT);
-
-            // Repeat generating a new ID if the employee ID already exists
         } while (Librarian::where('employee_id', $no)->exists());
-
-        
         return $no;
     }
 
-    /**
- * Change the authenticated user's password.
- */
-public function changePassword(Request $request)
-{
-    // Validate the incoming request
-    $request->validate([
-        // Current password is required
-        'current_password' => ['required'],
+    public function changePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => ['required'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
 
-        // New password is required, must be confirmed,
-        // and must contain at least 8 characters
-        'password' => ['required', 'confirmed', Password::min(8)],
-    ]);
+        $user = $request->user();
 
-    // Get the currently authenticated user
-    $user = $request->user();
+        if (! Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'message' => 'The provided password does not match your current password.',
+                'errors' => ['current_password' => ['Current password is incorrect.']],
+            ], 422);
+        }
 
-    // Verify that the provided current password matches
-    // the user's existing password in the database
-    if (! Hash::check($request->current_password, $user->password)) {
+        $user->update(['password' => $request->password]);
 
-        return response()->json([
-            'message' => 'The provided password does not match your current password.',
-            'errors' => [
-                'current_password' => [
-                    'Current password is incorrect.',
-                ],
-            ],
-        ], 422);
+        return response()->json(['message' => 'Password updated successfully.']);
     }
-
-    // Update the user's password
-    // The password is automatically hashed by the model cast
-    $user->update([
-        'password' => $request->password,
-    ]);
-
-    // Return a success response
-    return response()->json([
-        'message' => 'Password updated successfully.',
-    ]);
 }
-    
-}
- 
