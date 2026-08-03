@@ -9,9 +9,6 @@ use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
-    /**
-     * Current user's own notifications. Supports type + is_read filters.
-     */
     public function index(Request $request)
     {
         $query = Notification::where('user_id', $request->user()->id)->latest();
@@ -86,7 +83,14 @@ class NotificationController extends Controller
         ]);
 
         if (!empty($validated['broadcast'])) {
-            $memberIds = User::where('role', 'member')->pluck('id');
+            // FIX: User has no `role` string column — role is via
+            // role_id + the role() belongsTo(Role) relation (same schema
+            // as everywhere else in this app: AuthController, Sidebar
+            // permission checks, ReportController@user, etc). The old
+            // User::where('role', 'member') threw
+            // "column role does not exist" on every broadcast send.
+            $memberIds = User::whereHas('role', fn ($q) => $q->where('name', 'member'))
+                ->pluck('id');
 
             $rows = $memberIds->map(fn ($id) => [
                 'user_id'    => $id,

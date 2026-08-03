@@ -12,6 +12,7 @@ use App\Models\Report;
 use App\Models\User;
 use App\Services\ReportExportService;
 use Carbon\Carbon;
+use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -37,13 +38,21 @@ class ReportController extends Controller
                     'total_books'      => Book::count(),
                     'available_copies' => BookCopy::where('status', 'available')->count(),
                 ],
-                'borrow_trend' => BorrowTransaction::whereBetween('borrow_date', [$from, $to])
-                    ->selectRaw('DATE(borrow_date) as date, COUNT(*) as total')
-                    ->groupBy('date')->orderBy('date')->get(),
-                'revenue_trend' => Fine::where('status', 'paid')
-                    ->whereBetween('paid_at', [$from, $to])
-                    ->selectRaw('DATE(paid_at) as date, SUM(amount) as total')
-                    ->groupBy('date')->orderBy('date')->get(),
+                'borrow_trend' => $this->fillDateSeries(
+                    BorrowTransaction::whereBetween('borrow_date', [$from, $to])
+                        ->selectRaw('DATE(borrow_date) as date, COUNT(*) as total')
+                        ->groupBy('date')->orderBy('date')->get(),
+                    $from,
+                    $to
+                ),
+                'revenue_trend' => $this->fillDateSeries(
+                    Fine::where('status', 'paid')
+                        ->whereBetween('paid_at', [$from, $to])
+                        ->selectRaw('DATE(paid_at) as date, SUM(amount) as total')
+                        ->groupBy('date')->orderBy('date')->get(),
+                    $from,
+                    $to
+                ),
                 'top_books' => Book::withCount(['borrows as borrow_count' => function ($q) use ($from, $to) {
                         $q->whereBetween('borrow_date', [$from, $to]);
                     }])
@@ -156,18 +165,52 @@ class ReportController extends Controller
         try {
             [$from, $to] = $this->resolveRange($request);
 
-            $trend = Fine::where('status', 'paid')
+            $trend = $this->fillDateSeries(
+                Fine::where('status', 'paid')
+                    ->whereBetween('paid_at', [$from, $to])
+                    ->selectRaw('DATE(paid_at) as date, SUM(amount) as total')
+                    ->groupBy('date')->orderBy('date')->get(),
+                $from,
+                $to
+            );
+
+            $periodTotal = (float) Fine::where('status', 'paid')
                 ->whereBetween('paid_at', [$from, $to])
-                ->selectRaw('DATE(paid_at) as date, SUM(amount) as total')
-                ->groupBy('date')->orderBy('date')->get();
+                ->sum('amount');
+
+            $thisMonthTotal = (float) Fine::where('status', 'paid')
+                ->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])
+                ->sum('amount');
 
             $summary = [
-                'total_revenue' => (float) Fine::where('status', 'paid')->whereBetween('paid_at', [$from, $to])->sum('amount'),
+                'total'      => $periodTotal,
+                'this_month' => $thisMonthTotal,
+                'fines'      => $periodTotal,
+                'services'   => 0,
+                'total_revenue' => $periodTotal,
                 'outstanding'   => (float) Fine::where('status', 'unpaid')->sum('amount'),
                 'avg_fine'      => round((float) (Fine::where('status', 'paid')->whereBetween('paid_at', [$from, $to])->avg('amount') ?? 0), 2),
             ];
 
-            return response()->json(['status' => 'success', 'summary' => $summary, 'trend' => $trend], 200);
+            $rows = Fine::where('status', 'paid')
+                ->whereBetween('paid_at', [$from, $to])
+                ->with('borrow.member.user:id,name')
+                ->latest('paid_at')
+                ->paginate($request->per_page ?? 15);
+
+            $rows->getCollection()->transform(fn ($f) => [
+                'id'          => $f->id,
+                'description' => 'Fine paid by ' . ($f->borrow?->member?->user?->name ?? 'member'),
+                'amount'      => $f->amount,
+                'created_at'  => optional($f->paid_at)->format('Y-m-d'),
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'summary' => $summary,
+                'trend'   => $trend,
+                'data'    => $rows,
+            ], 200);
 
         } catch (\Throwable $th) {
             Log::error('ReportController@revenue: ' . $th->getMessage());
@@ -175,22 +218,62 @@ class ReportController extends Controller
         }
     }
 
+    /**
+     * GET /api/admin/reports/stock
+     *
+     * FIX #1: `category` relation is now eager-loaded. Previously
+     * StockReportPage.vue's `row.category?.name` was always undefined
+     * (falling back to "—" for every row) because the query never
+     * selected the relation at all.
+     *
+     * FIX #2: summary keys renamed/added to match what
+     * StockReportPage.vue's <ReportSummaryCard> bindings actually read
+     * (`available`, `borrowed`, `low_stock`). Previously those keys
+     * didn't exist in the response at all, so every card after "Total
+     * Books" silently showed 0. Old key names kept alongside for
+     * backward compatibility with anything else that might read them.
+     *
+     * FIX #3: the `status` query param (labelled "Category" by
+     * ReportFilter on the frontend) is now applied as a category_id
+     * filter — previously it was accepted but never used.
+     */
     public function stock(Request $request)
     {
         try {
-            $rows = Book::withCount([
+            $rows = Book::with('category:id,name')
+                ->withCount([
                     'bookCopies as total_copies',
                     'bookCopies as available_copies' => fn ($q) => $q->where('status', 'available'),
                     'bookCopies as borrowed_copies'   => fn ($q) => $q->where('status', 'borrowed'),
                     'bookCopies as lost_copies'       => fn ($q) => $q->where('status', 'lost'),
                 ])
                 ->when($request->search, fn ($q) => $q->where('title', 'like', "%{$request->search}%"))
-                ->when($request->boolean('low_stock'), fn ($q) => $q->having('available_copies', '<=', 2))
+                ->when($request->status, fn ($q) => $q->where('category_id', $request->status))
+                // FIX: PostgreSQL rejects HAVING on a withCount() alias
+                // without a GROUP BY ("column available_copies does not
+                // exist" — MySQL tolerates this, Postgres doesn't). Using
+                // a raw correlated subquery in WHERE instead sidesteps
+                // the alias entirely and works on both engines.
+                ->when($request->boolean('low_stock'), function ($q) {
+                    $q->whereRaw(
+                        '(select count(*) from book_copies where book_copies.book_id = books.id and book_copies.status = ? and book_copies.deleted_at is null) <= 2',
+                        ['available']
+                    );
+                })
                 ->orderBy('title')
                 ->paginate($request->per_page ?? 15);
 
             $summary = [
-                'total_books'      => Book::count(),
+                'total_books' => Book::count(),
+                'available'   => BookCopy::where('status', 'available')->count(),
+                'borrowed'    => BookCopy::where('status', 'borrowed')->count(),
+                // FIX: same raw-subquery approach, avoiding
+                // withCount()->having() entirely for Postgres compatibility.
+                'low_stock'   => Book::whereRaw(
+                    '(select count(*) from book_copies where book_copies.book_id = books.id and book_copies.status = ? and book_copies.deleted_at is null) <= 2',
+                    ['available']
+                )->count(),
+                // old names kept for backward compatibility
                 'total_copies'     => BookCopy::count(),
                 'available_copies' => BookCopy::where('status', 'available')->count(),
                 'borrowed_copies'  => BookCopy::where('status', 'borrowed')->count(),
@@ -300,6 +383,22 @@ class ReportController extends Controller
         return [$from, $to];
     }
 
+    private function fillDateSeries($sparse, Carbon $from, Carbon $to): array
+    {
+        $byDate = $sparse->keyBy(fn ($row) => Carbon::parse($row->date)->toDateString());
+
+        $series = [];
+        foreach (CarbonPeriod::create($from->copy()->startOfDay(), $to->copy()->startOfDay()) as $day) {
+            $key = $day->toDateString();
+            $series[] = [
+                'date'  => $key,
+                'total' => $byDate->has($key) ? (float) $byDate->get($key)->total : 0.0,
+            ];
+        }
+
+        return $series;
+    }
+
     private function buildExportRows(string $type, Carbon $from, Carbon $to, ?string $status): array
     {
         return match ($type) {
@@ -330,9 +429,9 @@ class ReportController extends Controller
                 ['ID', 'Name', 'Email', 'Role', 'Total Borrows'],
             ],
             'stock' => [
-                Book::withCount('bookCopies')->get()
-                    ->map(fn ($b) => [$b->id, $b->title, $b->author, $b->book_copies_count]),
-                ['ID', 'Title', 'Author', 'Copies'],
+                Book::with('category:id,name')->withCount('bookCopies')->get()
+                    ->map(fn ($b) => [$b->id, $b->title, $b->author, $b->category?->name ?? '—', $b->book_copies_count]),
+                ['ID', 'Title', 'Author', 'Category', 'Copies'],
             ],
             'revenue' => [
                 Fine::where('status', 'paid')
