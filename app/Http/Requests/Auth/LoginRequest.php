@@ -26,4 +26,19 @@ class LoginRequest extends FormRequest
             'password' => ['required', 'string'],
         ];
     }
-} 
+
+    /**
+     * Custom error messages — pulled from resources/lang/{locale}/validation.php
+     * so the response respects the X-Locale header set by SetLocale middleware.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'email.required' => __('validation.custom.email.required'),
+            'email.email' => __('validation.custom.email.email'),
+            'password.required' => __('validation.custom.password.required'),
+        ];
+    }
+}

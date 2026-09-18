@@ -160,8 +160,21 @@ class ReportController extends Controller
         }
     }
 
+    /**
+     * GET /admin/reports/revenue
+     * Accessible by: admin only.
+     *
+     * FIX: previously reachable by librarian via the shared
+     * 'role:admin,librarian' group. Financial/revenue data is now
+     * treated the same as ai_config/security_settings in
+     * SettingController — sensitive enough to be admin-only. Route
+     * middleware already enforces this (see routes/api.php §10), this
+     * check is defense-in-depth in case the route is ever refactored.
+     */
     public function revenue(Request $request)
     {
+        $this->authorizeAdmin($request);
+
         try {
             [$from, $to] = $this->resolveRange($request);
 
@@ -288,8 +301,19 @@ class ReportController extends Controller
         }
     }
 
+    /**
+     * POST /admin/reports/export
+     * Accessible by: admin only.
+     *
+     * FIX: previously reachable by librarian — exporting writes a file
+     * to storage and hands back a public download_url, which is a
+     * data-handling action, not a read. Same tier as
+     * store/update/destroy in SettingController.
+     */
     public function export(Request $request)
     {
+        $this->authorizeAdmin($request);
+
         $validated = $request->validate([
             'type'      => 'required|in:borrow,fine,user,revenue,stock',
             'format'    => 'required|in:pdf,excel,csv',
@@ -341,6 +365,10 @@ class ReportController extends Controller
         }
     }
 
+    /**
+     * GET /admin/reports
+     * Accessible by: admin, librarian.
+     */
     public function index(Request $request)
     {
         try {
@@ -357,8 +385,18 @@ class ReportController extends Controller
         }
     }
 
-    public function destroy($id)
+    /**
+     * DELETE /admin/reports/{id}
+     * Accessible by: admin only.
+     *
+     * FIX: previously reachable by librarian — deleting report history
+     * (and the underlying exported file) is a destructive action, same
+     * tier as destroy() in SettingController.
+     */
+    public function destroy(Request $request, $id)
     {
+        $this->authorizeAdmin($request);
+
         try {
             $report = Report::findOrFail($id);
 
@@ -372,6 +410,22 @@ class ReportController extends Controller
         } catch (\Throwable $th) {
             Log::error('ReportController@destroy: ' . $th->getMessage());
             return response()->json(['status' => 'error', 'message' => $th->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Central admin-only guard for report actions that go beyond plain
+     * viewing (revenue, export, destroy). Mirrors
+     * SettingController::authorizeAdminOnly() so both features fail the
+     * same way for a librarian who somehow reaches these endpoints
+     * despite route middleware already blocking them.
+     */
+    private function authorizeAdmin(Request $request): void
+    {
+        $role = $request->user()->loadMissing('role')->role?->name;
+
+        if ($role !== 'admin') {
+            abort(403, 'Only admins can access this report.');
         }
     }
 

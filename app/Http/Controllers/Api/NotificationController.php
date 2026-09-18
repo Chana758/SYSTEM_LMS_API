@@ -9,6 +9,9 @@ use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
+    /**
+     * Display a listing of notifications for the authenticated user.
+     */
     public function index(Request $request)
     {
         $query = Notification::where('user_id', $request->user()->id)->latest();
@@ -23,6 +26,9 @@ class NotificationController extends Controller
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
+    /**
+     * Get unread notification count.
+     */
     public function unreadCount(Request $request)
     {
         $count = Notification::where('user_id', $request->user()->id)
@@ -32,6 +38,9 @@ class NotificationController extends Controller
         return response()->json(['count' => $count]);
     }
 
+    /**
+     * View a single notification and mark it as read.
+     */
     public function show(Request $request, Notification $notification)
     {
         $this->authorizeOwner($request, $notification);
@@ -43,6 +52,9 @@ class NotificationController extends Controller
         return response()->json($notification);
     }
 
+    /**
+     * Mark a specific notification as read.
+     */
     public function markRead(Request $request, Notification $notification)
     {
         $this->authorizeOwner($request, $notification);
@@ -51,6 +63,9 @@ class NotificationController extends Controller
         return response()->json(['message' => 'Marked as read.', 'data' => $notification->fresh()]);
     }
 
+    /**
+     * Mark all notifications for the authenticated user as read.
+     */
     public function markAllRead(Request $request)
     {
         Notification::where('user_id', $request->user()->id)
@@ -60,6 +75,9 @@ class NotificationController extends Controller
         return response()->json(['message' => 'All notifications marked as read.']);
     }
 
+    /**
+     * Delete a notification.
+     */
     public function destroy(Request $request, Notification $notification)
     {
         $this->authorizeOwner($request, $notification);
@@ -73,6 +91,13 @@ class NotificationController extends Controller
      */
     public function store(Request $request)
     {
+        // Server-side guard: only admin/librarian may send/broadcast notifications.
+        // Relying on the frontend's `canSend` check alone is not enough.
+        $role = $request->user()->role->name ?? null;
+        if (!in_array($role, ['admin', 'librarian'], true)) {
+            abort(403, 'Only admins or librarians can send notifications.');
+        }
+
         $validated = $request->validate([
             'title'     => ['required', 'string', 'max:255'],
             'message'   => ['required', 'string'],
@@ -83,15 +108,10 @@ class NotificationController extends Controller
         ]);
 
         if (!empty($validated['broadcast'])) {
-            // FIX: User has no `role` string column — role is via
-            // role_id + the role() belongsTo(Role) relation (same schema
-            // as everywhere else in this app: AuthController, Sidebar
-            // permission checks, ReportController@user, etc). The old
-            // User::where('role', 'member') threw
-            // "column role does not exist" on every broadcast send.
             $memberIds = User::whereHas('role', fn ($q) => $q->where('name', 'member'))
                 ->pluck('id');
 
+            $now = now();
             $rows = $memberIds->map(fn ($id) => [
                 'user_id'    => $id,
                 'title'      => $validated['title'],
@@ -99,9 +119,9 @@ class NotificationController extends Controller
                 'type'       => $validated['type'],
                 'link'       => $validated['link'] ?? null,
                 'is_read'    => false,
-                'sent_at'    => now(),
-                'created_at' => now(),
-                'updated_at' => now(),
+                'sent_at'    => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
             ])->toArray();
 
             Notification::insert($rows);
@@ -126,6 +146,9 @@ class NotificationController extends Controller
         return response()->json(['message' => 'Notification sent.', 'data' => $notification], 201);
     }
 
+    /**
+     * Check if the authenticated user owns the notification.
+     */
     private function authorizeOwner(Request $request, Notification $notification): void
     {
         if ($notification->user_id !== $request->user()->id) {

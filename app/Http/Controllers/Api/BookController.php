@@ -17,7 +17,13 @@ class BookController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Book::query()->with('category');
+        $query = Book::query()
+            ->with('category')
+            ->withCount([
+                'reservations as active_reservations_count' => function ($q) {
+                    $q->whereIn('status', ['pending', 'ready']);
+                }
+            ]);
 
         if ($request->filled('search')) {
             $search = $request->input('search');
@@ -45,7 +51,6 @@ class BookController extends Controller
         return response()->json($query->paginate($request->input('per_page', 12)));
     }
 
-    // GET /books/popular — Most borrowed books (សម្រាប់ homepage/dashboard widget)
     public function popular(Request $request)
     {
         $books = Book::withCount('borrows')
@@ -57,7 +62,6 @@ class BookController extends Controller
         return response()->json($books);
     }
 
-    // POST /books/lookup-isbn — Auto-fill form ពី Google Books API
     public function lookupIsbn(Request $request)
     {
         $request->validate(['isbn' => ['required', 'string']]);

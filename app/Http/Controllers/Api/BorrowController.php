@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 class BorrowController extends Controller
 {
     protected int $borrowDays = 14;
-    protected int $finePerDay = 500; // ៛/day — បំលែងទៅ USD ត្រង់ returnBook()
+    protected int $finePerDay = 500;
     protected int $maxRenewals = 2;
     protected int $renewDays = 7;
 
@@ -130,6 +130,17 @@ class BorrowController extends Controller
                 $ownReservation->update(['status' => 'fulfilled']);
             }
 
+            // បន្ថែម Notification ជូនដំណឹងទៅ Member ពេលខ្ចីសៀវភៅបានสำเร็จ
+            Notification::create([
+                'user_id' => $member->user_id,
+                'title'   => 'Book Borrowed Successfully',
+                'message' => "You have successfully borrowed \"{$bookCopy->book->title}\". Due date: " . Carbon::parse($borrow->due_date)->format('M d, Y'),
+                'type'    => 'system',
+                'link'    => "/my-borrows/{$borrow->id}",
+                'is_read' => false,
+                'sent_at' => now(),
+            ]);
+
             return response()->json([
                 'message' => 'Book borrowed successfully.',
                 'data'    => $borrow->load(['member.user', 'bookCopy.book.category']),
@@ -184,16 +195,6 @@ class BorrowController extends Controller
         ]);
     }
 
-    /**
-     * FIX: All fine amounts (overdue, damaged, lost) are now converted
-     * from Riel to USD via CurrencyHelper::khrToUsd() at the ONE place
-     * they're created — the backend. Previously overdue fines were never
-     * converted at all (500៛/day stored as $500/day), and damaged/lost
-     * fines relied on the frontend to pre-convert, which was fragile and
-     * inconsistent (a direct API call, e.g. from Postman or a future
-     * integration, would bypass the frontend conversion entirely and
-     * store raw Riel as USD again).
-     */
     public function returnBook(Request $request, BorrowTransaction $borrow)
     {
         if ($borrow->status === 'returned') {
@@ -221,7 +222,6 @@ class BorrowController extends Controller
 
             $createdFines = [];
 
-            // ✅ FIX: bằng khrToUsd() — trước đây gán thẳng số Riel vào cột USD
             if ($daysLate > 0) {
                 $createdFines[] = Fine::create([
                     'borrow_id' => $borrow->id,
@@ -231,9 +231,6 @@ class BorrowController extends Controller
                 ]);
             }
 
-            //  FIX: $request->input('damage_fee') is now the RAW Riel value
-            // sent by ReturnForm.vue (frontend no longer pre-converts —
-            // see ReturnForm.vue below). Converted here, once, in one place.
             if ($condition === 'damaged') {
                 $createdFines[] = Fine::create([
                     'borrow_id' => $borrow->id,
@@ -257,8 +254,6 @@ class BorrowController extends Controller
 
             $totalFineUsd = collect($createdFines)->sum('amount');
 
-            // FIX: notification message now shows $ — totalFine is USD
-            // after conversion, not the raw Riel figure anymore.
             if ($totalFineUsd > 0) {
                 Notification::create([
                     'user_id' => $borrow->member->user_id,

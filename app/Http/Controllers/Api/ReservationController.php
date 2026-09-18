@@ -8,6 +8,7 @@ use App\Models\BookCopy;
 use App\Models\Member;
 use App\Models\Notification;
 use App\Models\Reservation;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -59,21 +60,12 @@ class ReservationController extends Controller
 
     /**
      * Create a new reservation.
-     *
-     * - Admin/Librarian: must supply member_id (reserving on behalf of someone).
-     * - Member: member_id is resolved from the authenticated user, ignoring
-     *   whatever (if anything) was submitted in the request body. This keeps
-     *   the frontend simple (member never needs to know their own member_id)
-     *   and prevents a member from ever reserving as someone else.
      */
     public function store(StoreReservationRequest $request)
     {
         return DB::transaction(function () use ($request) {
             $user = $request->user();
 
-            // NOTE: role() is a belongsTo(Role::class) relationship on User,
-            // so $user->role is a Role model instance — compare $user->role->name,
-            // never $user->role directly, or this check silently always fails.
             if ($user->role?->name === 'member') {
                 $member = Member::where('user_id', $user->id)->firstOrFail();
             } else {
@@ -101,11 +93,14 @@ class ReservationController extends Controller
                 return response()->json(['message' => 'This book is currently available. Please borrow it directly.'], 422);
             }
 
-            // Lock existing queue rows for this book to prevent race conditions
-            $nextPriority = Reservation::where('book_id', $bookId)
+            // Lock existing queue rows by selecting the last reservation record
+            $lastReservation = Reservation::where('book_id', $bookId)
                 ->whereIn('status', ['pending', 'ready'])
+                ->orderByDesc('priority_order')
                 ->lockForUpdate()
-                ->max('priority_order');
+                ->first();
+
+            $nextPriority = $lastReservation ? $lastReservation->priority_order : 0;
 
             $reservation = Reservation::create([
                 'book_id'        => $bookId,
@@ -113,8 +108,41 @@ class ReservationController extends Controller
                 'reserved_date'  => now(),
                 'expire_date'    => now()->addDays($this->pendingExpiryDays),
                 'status'         => 'pending',
-                'priority_order' => ($nextPriority ?? 0) + 1,
+                'priority_order' => $nextPriority + 1,
             ]);
+
+            // Load book and member relationships for notifications
+            $reservation->load(['book', 'member.user']);
+
+            // 1. Notify the member about their confirmed reservation in the queue
+            Notification::create([
+                'user_id' => $member->user_id,
+                'title'   => 'Reservation Confirmed',
+                'message' => "You have been added to the queue for \"{$reservation->book->title}\".",
+                'type'    => 'reservation',
+                'link'    => "/my-reservations/{$reservation->id}",
+                'is_read' => false,
+                'sent_at' => now(),
+            ]);
+
+            // 2. Notify all Admin and Librarian users in real-time
+            $staffUsers = User::whereHas('role', fn ($q) => $q->whereIn('name', ['admin', 'librarian']))->pluck('id');
+
+            if ($staffUsers->isNotEmpty()) {
+                $staffNotifications = $staffUsers->map(fn ($staffId) => [
+                    'user_id'    => $staffId,
+                    'title'      => 'New Book Reservation',
+                    'message'    => "Member {$reservation->member->user->name} has requested a reservation for \"{$reservation->book->title}\".",
+                    'type'       => 'reservation',
+                    'link'       => "/admin/reservations/{$reservation->id}",
+                    'is_read'    => false,
+                    'sent_at'    => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ])->toArray();
+
+                Notification::insert($staffNotifications);
+            }
 
             return response()->json([
                 'message' => 'Book reserved successfully. You are in the queue.',
@@ -134,9 +162,8 @@ class ReservationController extends Controller
     public function cancel(Request $request, Reservation $reservation)
     {
         $user = $request->user();
+        $isStaffCancelling = in_array($user->role?->name, ['admin', 'librarian'], true);
 
-        // Ensure member can only cancel their own reservations
-        // NOTE: same relationship gotcha as store() above — use ->role->name.
         if ($user->role?->name === 'member') {
             $member = Member::where('user_id', $user->id)->firstOrFail();
             if ($reservation->member_id !== $member->id) {
@@ -152,6 +179,21 @@ class ReservationController extends Controller
         $bookId = $reservation->book_id;
 
         $reservation->update(['status' => 'cancelled']);
+        $reservation->load(['book', 'member.user']);
+
+        // Notify the member — this matters most when staff cancel on the
+        // member's behalf, since the member wouldn't otherwise know.
+        // FIX: previously no notification was sent on cancel at all.
+        Notification::create([
+            'user_id' => $reservation->member->user_id,
+            'title'   => 'Reservation Cancelled',
+            'message' => $isStaffCancelling
+                ? "Your reservation for \"{$reservation->book->title}\" was cancelled by a librarian."
+                : "Your reservation for \"{$reservation->book->title}\" has been cancelled.",
+            'type'    => 'reservation',
+            'is_read' => false,
+            'sent_at' => now(),
+        ]);
 
         // Promote the next person in line if the cancelled reservation was 'ready'
         if ($wasReady) {
@@ -174,6 +216,18 @@ class ReservationController extends Controller
         }
 
         $reservation->update(['status' => 'fulfilled']);
+        $reservation->load(['book', 'member.user']);
+
+        // FIX: previously no notification was sent on fulfill — the member
+        // had no confirmation that their pickup was recorded.
+        Notification::create([
+            'user_id' => $reservation->member->user_id,
+            'title'   => 'Reservation Completed',
+            'message' => "You've picked up \"{$reservation->book->title}\". Enjoy your read!",
+            'type'    => 'reservation',
+            'is_read' => false,
+            'sent_at' => now(),
+        ]);
 
         return response()->json([
             'message' => 'Reservation marked as fulfilled.',

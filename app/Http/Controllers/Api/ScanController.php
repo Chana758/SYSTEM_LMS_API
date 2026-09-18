@@ -34,17 +34,24 @@ class ScanController extends Controller
         if ($bookCopy) {
             $result = 'success';
 
-            // FIX/ENHANCEMENT: for a 'return' scan, look up the active
-            // (still-borrowed) transaction for this copy so the frontend
-            // can immediately show a "Confirm Return" action without a
-            // second manual lookup step.
-            if ($validated['scan_type'] === 'return') {
-                $activeBorrow = BorrowTransaction::with('member.user:id,name')
-                    ->where('book_copy_id', $bookCopy->id)
-                    ->where('status', 'borrowed')
-                    ->latest('borrow_date')
-                    ->first();
+            // FIX: fetch the active (still-borrowed) transaction for this
+            // copy REGARDLESS of scan_type. All three flows need it:
+            //   - lookup: staff need to see "Borrowed by X" even when just
+            //             checking a book's status.
+            //   - return: needed to know what to return / compute overdue.
+            //   - borrow: needed so a copy that's already checked out can
+            //             offer "Add to Reservation Queue" instead of a
+            //             dead-end error.
+            // Previously this was only computed for scan_type === 'return',
+            // which silently broke the lookup banner and the borrow
+            // reservation flow for every other scan type.
+            $activeBorrow = BorrowTransaction::with('member.user:id,name')
+                ->where('book_copy_id', $bookCopy->id)
+                ->where('status', 'borrowed')
+                ->latest('borrow_date')
+                ->first();
 
+            if ($validated['scan_type'] === 'return') {
                 if (!$activeBorrow) {
                     // Copy exists but nothing is currently borrowed against
                     // it — flag as an error rather than a false "success"
@@ -53,11 +60,21 @@ class ScanController extends Controller
                 }
             }
 
-            // FIX/ENHANCEMENT: for a 'borrow' scan, make sure the physical
-            // copy is actually available before staff proceeds.
             if ($validated['scan_type'] === 'borrow' && $bookCopy->status !== 'available') {
-                $result = 'error';
+                // FIX: only treat this as a hard error when there is truly
+                // nothing to act on (e.g. a damaged/lost copy with no
+                // active loan). If the copy is checked out AND we found
+                // its active_borrow, keep result = 'success' so the
+                // frontend can render the "reserve for member" flow
+                // instead of a dead-end error banner.
+                if (!$activeBorrow) {
+                    $result = 'error';
+                }
             }
+
+            // scan_type === 'lookup' never forces an error based on
+            // status — it's read-only, so any found copy is a 'success'
+            // and active_borrow (if any) is simply shown for context.
         }
 
         $log = ScanHistory::create([
@@ -90,8 +107,6 @@ class ScanController extends Controller
             $query->where('scan_type', $request->scan_type);
         }
 
-        // FIX/ENHANCEMENT: added result + search + date-range filters to
-        // match the filtering pattern already used in FineController.
         if ($request->filled('scan_result')) {
             $query->where('scan_result', $request->scan_result);
         }
@@ -118,8 +133,6 @@ class ScanController extends Controller
     /**
      * GET /scan/summary
      * Accessible by: admin, librarian
-     * FIX/ENHANCEMENT: was missing — powers the stat cards on the
-     * Scan History page (total scans, success rate, today's count).
      */
     public function summary()
     {

@@ -3,10 +3,13 @@
 use App\Http\Controllers\Api\{
     AccountController, AuthController, AvatarController, BackupController,
     BookController, BookReviewController, BorrowController, CategoryController,
+    ChatbotController,
     DashboardController, EbookController, EbookFavoriteController, FineController,
     LibrarianController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
+    RecommendationController,
     ReportController,
-    ReservationController, ScanController, SettingController
+    ReservationController, ScanController, SettingController,
+    RemoteScanController, RemoteLoginController
 };
 use Illuminate\Support\Facades\Route;
 
@@ -15,6 +18,9 @@ use Illuminate\Support\Facades\Route;
 | API Routes
 |--------------------------------------------------------------------------
 */
+
+// PUBLIC (No auth:sanctum required) - Needed for Login/Register pages
+Route::get('branding', [SettingController::class, 'branding']);
 
 // 1. AUTH
 Route::prefix('auth')->group(function () {
@@ -34,7 +40,7 @@ Route::prefix('auth')->group(function () {
         Route::get('profile/preferences', [PreferenceController::class, 'show']);
         Route::put('profile/preferences', [PreferenceController::class, 'update']);
 
-        Route::post('qr-token/generate', [AuthController::class, 'generateQrToken']);
+        Route::get('qr-token/status', [AuthController::class, 'qrCardStatus']);
         Route::post('qr-token/revoke', [AuthController::class, 'revokeQrToken']);
 
         Route::middleware('role:admin,librarian')
@@ -138,10 +144,6 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('members')->
 Route::middleware('auth:sanctum')->get('/member/profile', [MemberController::class, 'myProfile']);
 
 // 5.6. MEMBERSHIP TYPES (master data for Member forms)
-// FIX: new — was previously hardcoded as Rule::in(['student','teacher',
-// 'external']) inside StoreMemberRequest/UpdateMemberRequest. Now backed
-// by a real table so admin can add/rename/retire types from the
-// Membership Types settings page without a code change or deploy.
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('membership-types', [MembershipTypeController::class, 'index']);
 
@@ -166,6 +168,7 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('fines')->gr
     Route::get('summary', [FineController::class, 'summary']);
     Route::post('/', [FineController::class, 'store']);
     Route::get('{fine}', [FineController::class, 'show']);
+    Route::put('{fine}', [FineController::class, 'update']);
     Route::post('{fine}/pay', [FineController::class, 'pay']);
     Route::post('{fine}/waive', [FineController::class, 'waive']);
 });
@@ -182,6 +185,22 @@ Route::middleware('auth:sanctum')->prefix('scan')->group(function () {
     });
 });
 
+// 6.6. REMOTE SCAN (phone-as-camera pairing for the Scanner page — staff already logged in)
+// Route::middleware('auth:sanctum')->group(function () {
+//     Route::post('/remote-scan/session', [RemoteScanController::class, 'createSession']);
+// });
+// Route::middleware('throttle:20,1')->group(function () {
+//     Route::get('/remote-scan/{sessionId}/status', [RemoteScanController::class, 'status']);
+//     Route::post('/remote-scan/{sessionId}/submit', [RemoteScanController::class, 'submitScan']);
+// });
+
+// 6.7. REMOTE LOGIN (phone-as-camera pairing for the Login page — nobody is logged in yet, all public)
+// Route::middleware('throttle:20,1')->group(function () {
+//     Route::post('/remote-login/session', [RemoteLoginController::class, 'createSession']);
+//     Route::get('/remote-login/{sessionId}/status', [RemoteLoginController::class, 'status']);
+//     Route::post('/remote-login/{sessionId}/submit', [RemoteLoginController::class, 'submitScan']);
+// });
+
 // 7. SETTINGS & MISC
 Route::middleware('auth:sanctum')->prefix('settings')->group(function () {
     Route::middleware('role:admin,librarian')->group(function () {
@@ -190,22 +209,18 @@ Route::middleware('auth:sanctum')->prefix('settings')->group(function () {
     });
 
     Route::middleware('role:admin')->group(function () {
-        Route::post('/', [SettingController::class, 'store']);
-        Route::put('{setting}', [SettingController::class, 'update']);
-        Route::delete('{setting}', [SettingController::class, 'destroy']);
+        Route::post('branding', [SettingController::class, 'updateBranding']);
 
         Route::get('backup/create', [BackupController::class, 'create']);
         Route::post('backup/restore', [BackupController::class, 'restore']);
+
+        Route::post('/', [SettingController::class, 'store']);
+        Route::put('{setting}', [SettingController::class, 'update']);
+        Route::delete('{setting}', [SettingController::class, 'destroy']);
     });
 });
 
 // 8. DASHBOARD
-// FIX: was a single Route::get('dashboard', ...) line only covering the
-// stats endpoint. Expanded into a prefix('dashboard') group with the two
-// additional endpoints (recent-activities, revenue-chart) that
-// dashboardStore.js's fetchRecentActivities() and fetchRevenueChart()
-// already call, backed now by DashboardController::recentActivities()
-// and DashboardController::revenueChart().
 Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('dashboard')->group(function () {
     Route::get('/', [DashboardController::class, 'index']);
     Route::get('recent-activities', [DashboardController::class, 'recentActivities']);
@@ -224,17 +239,41 @@ Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
     Route::middleware('role:admin,librarian')->post('/', [NotificationController::class, 'store']);
 });
 
-// 10. ADMIN REPORTS
-Route::middleware(['auth:sanctum', 'role:admin,librarian'])
+// 10. AI CHATBOT (OpenAI-powered, function/tool calling — see ChatbotAiService)
+//
+// FIX: throttle added. Each chat message can trigger up to
+// ChatbotAiService::MAX_TOOL_ROUNDS (5) OpenAI calls in a single
+// request, so without a rate limit a single user could run up real
+// API cost very quickly, by accident or on purpose. 20 messages/minute
+// is generous for a real conversation but blocks abuse/spam loops.
+Route::middleware(['auth:sanctum', 'throttle:20,1'])->prefix('chatbot')->group(function () {
+    Route::get('history', [ChatbotController::class, 'index']);
+    Route::post('/', [ChatbotController::class, 'store']);
+    Route::delete('history', [ChatbotController::class, 'clear']);
+});
+
+// 11. AI RECOMMENDATIONS (content-based)
+Route::middleware('auth:sanctum')->prefix('recommendations')->group(function () {
+    Route::get('/', [RecommendationController::class, 'index']);
+    Route::post('{book}/click', [RecommendationController::class, 'markClicked']);
+});
+
+// 12. ADMIN REPORTS
+Route::middleware(['auth:sanctum'])
     ->prefix('admin/reports')
     ->group(function () {
-        Route::get('/dashboard', [ReportController::class, 'dashboard']);
-        Route::get('/borrow',    [ReportController::class, 'borrow']);
-        Route::get('/fine',      [ReportController::class, 'fine']);
-        Route::get('/user',      [ReportController::class, 'user']);
-        Route::get('/revenue',   [ReportController::class, 'revenue']);
-        Route::get('/stock',     [ReportController::class, 'stock']);
-        Route::post('/export',   [ReportController::class, 'export']);
-        Route::get('/',          [ReportController::class, 'index']);
-        Route::delete('/{id}',   [ReportController::class, 'destroy']);
+        Route::middleware('role:admin,librarian')->group(function () {
+            Route::get('/dashboard', [ReportController::class, 'dashboard']);
+            Route::get('/borrow',    [ReportController::class, 'borrow']);
+            Route::get('/fine',      [ReportController::class, 'fine']);
+            Route::get('/user',      [ReportController::class, 'user']);
+            Route::get('/stock',     [ReportController::class, 'stock']);
+            Route::get('/',          [ReportController::class, 'index']);
+        });
+
+        Route::middleware('role:admin')->group(function () {
+            Route::get('/revenue',   [ReportController::class, 'revenue']);
+            Route::post('/export',   [ReportController::class, 'export']);
+            Route::delete('/{id}',   [ReportController::class, 'destroy']);
+        });
     });

@@ -30,6 +30,18 @@ class UpdateBookRequest extends FormRequest
             'status' => ['sometimes', 'string', 'in:available,damaged,lost,archived'],
             'cover_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ];
-        // ចំណាំ: total_qty មិនកែត្រង់នេះទេ — ប្រើ endpoint add-copies ដាច់ដោយឡែក
+
+        // Note: total_qty cannot be updated here.
+        // Use the dedicated add-copies endpoint instead.
+    }
+
+    /**
+     * Use the same isbn.unique validation message as StoreBookRequest.
+     */
+    public function messages(): array
+    {
+        return [
+            'isbn.unique' => __('validation.custom.book.isbn.unique'),
+        ];
     }
 }

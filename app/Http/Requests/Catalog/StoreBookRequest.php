@@ -28,4 +28,17 @@ class StoreBookRequest extends FormRequest
             'cover_image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ];
     }
+
+    /**
+     *  Custom error messages — only isbn.unique needs a translated
+     * message; the rest use Laravel's default :attribute-based messages
+     * which are already covered by validation.php's core 'attributes'
+     * array (see note below).
+     */
+    public function messages(): array
+    {
+        return [
+            'isbn.unique' => __('validation.custom.book.isbn.unique'),
+        ];
+    }
 }

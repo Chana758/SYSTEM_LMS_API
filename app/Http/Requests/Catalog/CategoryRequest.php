@@ -18,8 +18,8 @@ class CategoryRequest extends FormRequest
 
         return [
             'name' => [
-                'required', 
-                'string', 
+                'required',
+                'string',
                 'max:100',
                 Rule::unique('categories', 'name')->ignore($categoryId),
             ],
@@ -30,10 +30,10 @@ class CategoryRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'name.required' => 'The category name is required.',
-            'name.unique'   => 'This category name already exists.',
-            'name.max'      => 'The category name cannot exceed 100 characters.',
-            'description.max' => 'The description cannot exceed 500 characters.',
+            'name.required' => __('validation.custom.category.name.required'),
+            'name.unique' => __('validation.custom.category.name.unique'),
+            'name.max' => __('validation.custom.category.name.max'),
+            'description.max' => __('validation.custom.category.description.max'),
         ];
     }
 }

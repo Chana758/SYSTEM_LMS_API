@@ -22,10 +22,10 @@ class StoreBorrowRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'member_id.required' => 'Please select a member.',
-            'member_id.exists'   => 'The selected member could not be found.',
-            'book_id.required'   => 'Please select a book.',
-            'book_id.exists'     => 'The selected book could not be found.',
+            'member_id.required' => __('validation.custom.borrow.member_id.required'),
+            'member_id.exists' => __('validation.custom.borrow.member_id.exists'),
+            'book_id.required' => __('validation.custom.borrow.book_id.required'),
+            'book_id.exists' => __('validation.custom.borrow.book_id.exists'),
         ];
     }
 }

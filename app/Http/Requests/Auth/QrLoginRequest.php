@@ -28,4 +28,16 @@ class QrLoginRequest extends FormRequest
             'qr_token' => ['required', 'string', 'max:255'],
         ];
     }
+
+    /**
+     *  Custom error messages.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'qr_token.required' => __('validation.custom.qr_token.required'),
+        ];
+    }
 }

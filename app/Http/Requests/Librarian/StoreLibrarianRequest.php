@@ -7,17 +7,11 @@ use Illuminate\Validation\Rules\Password;
 
 class StoreLibrarianRequest extends FormRequest
 {
-    /**
-     * Authorization is already handled by the 'role:admin' middleware in api.php.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Validation rules for creating a new Librarian.
-     */
     public function rules(): array
     {
         return [
@@ -35,8 +29,8 @@ class StoreLibrarianRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.unique' => 'This email is already registered.',
-            'password.confirmed' => 'Password confirmation does not match.',
+            'email.unique' => __('validation.custom.librarian.email.unique'),
+            'password.confirmed' => __('validation.custom.librarian.password.confirmed'),
         ];
     }
 }
