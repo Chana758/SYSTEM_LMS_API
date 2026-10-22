@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 
 class FineController extends Controller
 {
+    /** List all fines with status, reason and member-name filters (staff). */
     public function index(Request $request)
     {
         $query = Fine::with(['borrow.member.user', 'borrow.bookCopy.book'])->latest();
@@ -26,6 +27,7 @@ class FineController extends Controller
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
+    /** List the logged-in member's own fines. */
     public function myFines(Request $request)
     {
         $member = Member::where('user_id', $request->user()->id)->firstOrFail();
@@ -39,16 +41,7 @@ class FineController extends Controller
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
-    /**
-     * POST /fines
-     *
-     * `amount` in the request is the RAW Riel value coming from
-     * FineForm.vue's create mode (same convention as ReturnForm.vue's
-     * damage_fee / lost_fee — no pre-conversion on the frontend side).
-     * CurrencyHelper::khrToUsd() does the conversion before saving, so
-     * `Fine.amount` in the database is always stored as USD, same as
-     * fines created automatically through the borrow/return flow.
-     */
+    /** Create a fine (amount converted from Riel to USD) and notify the member. */
     public function store(StoreFineRequest $request)
     {
         $validated = $request->validated();
@@ -73,40 +66,13 @@ class FineController extends Controller
         ], 201);
     }
 
+    /** Show one fine with its borrow, member and book. */
     public function show(Fine $fine)
     {
         return response()->json($fine->load(['borrow.member.user', 'borrow.bookCopy.book']));
     }
 
-    /**
-     * PUT /fines/{fine}
-     * Accessible by: admin, librarian (same as store/pay/waive).
-     *
-     * NEW — previously this endpoint didn't exist at all, even though
-     * FineEditPage.vue / FineForm.vue on the frontend already assumed
-     * it did (the edit page silently did nothing on submit).
-     *
-     * Two deliberate design choices, both to avoid a currency bug:
-     *
-     * 1. Only `unpaid` fines can be edited. Once a fine is paid or
-     *    waived it becomes a financial record of what actually
-     *    happened — changing it after the fact would make the ledger
-     *    (and the member's payment receipt) inconsistent with reality.
-     *
-     * 2. UNLIKE store(), `amount` here is NOT run through
-     *    CurrencyHelper::khrToUsd(). store() accepts a fresh Riel entry
-     *    and converts it once. update() instead edits the amount that's
-     *    already stored as USD and displayed everywhere in the UI
-     *    (fine lists, fine detail, my-fines) — re-running a KHR→USD
-     *    conversion on an already-USD value would silently corrupt it.
-     *    FineForm.vue's edit mode reflects this: the Amount field is
-     *    labeled and edited directly in USD.
-     *
-     * `borrow_id` is intentionally not editable here — a fine should
-     * stay tied to the borrow transaction it was issued for; if that
-     * link was wrong, the fine should be waived and a new one created
-     * against the correct borrow instead.
-     */
+    /** Edit the amount, reason or notes of an unpaid fine. */
     public function update(Request $request, Fine $fine)
     {
         if ($fine->status !== 'unpaid') {
@@ -131,6 +97,7 @@ class FineController extends Controller
         ]);
     }
 
+    /** Mark a fine as paid with a payment method and notify the member. */
     public function pay(Request $request, Fine $fine)
     {
         if ($fine->status === 'paid') {
@@ -159,6 +126,7 @@ class FineController extends Controller
         ]);
     }
 
+    /** Waive an unpaid fine and notify the member. */
     public function waive(Request $request, Fine $fine)
     {
         if ($fine->status !== 'unpaid') {
@@ -184,6 +152,7 @@ class FineController extends Controller
         ]);
     }
 
+    /** Return total unpaid, paid and waived amounts plus the unpaid count. */
     public function summary()
     {
         return response()->json([
@@ -194,12 +163,7 @@ class FineController extends Controller
         ]);
     }
 
-    /**
-     * Create a `fine`-type Notification for the member who owns this fine's
-     * borrow record. Silently no-ops if the relation chain is somehow
-     * missing a user, so a notification failure never blocks the fine
-     * action itself.
-     */
+    /** Send a fine notification to the member who owns the fine. */
     private function notifyMember(Fine $fine, string $title, string $message): void
     {
         $userId = $fine->borrow?->member?->user_id;
@@ -219,11 +183,7 @@ class FineController extends Controller
         ]);
     }
 
-    /**
-     * Human-readable reason for the "Fine Issued" message
-     * (e.g. "a damaged book", "a lost book"). Falls back to the raw
-     * reason value if it doesn't match a known case.
-     */
+    /** Turn a fine reason into a readable phrase for notification messages. */
     private function reasonLabel(Fine $fine): string
     {
         return match ($fine->reason) {

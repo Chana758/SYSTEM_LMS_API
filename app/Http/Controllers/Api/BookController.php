@@ -8,29 +8,39 @@ use App\Http\Requests\Catalog\StoreBookRequest;
 use App\Http\Requests\Catalog\UpdateBookRequest;
 use App\Models\Book;
 use App\Models\BookCopy;
+use App\Models\Reservation;
+use App\Services\ReservationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 class BookController extends Controller
 {
+    /** Inject the reservation service used to promote the waiting queue. */
+    public function __construct(protected ReservationService $reservations)
+    {
+    }
+
+    /** List books with search, category/status filters, sorting and pagination. */
     public function index(Request $request)
     {
         $query = Book::query()
             ->with('category')
             ->withCount([
                 'reservations as active_reservations_count' => function ($q) {
-                    $q->whereIn('status', ['pending', 'ready']);
-                }
+                    $q->whereIn('status', Reservation::ACTIVE);
+                },
             ]);
 
         if ($request->filled('search')) {
             $search = $request->input('search');
-            $query->where(function ($q) use ($search) {
-                $q->where('title', 'ilike', "%{$search}%")
-                  ->orWhere('author', 'ilike', "%{$search}%")
-                  ->orWhere('isbn', 'ilike', "%{$search}%");
+            // ilike = PostgreSQL. If your DB is MySQL, change both to 'like'.
+            $op = DB::connection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
+
+            $query->where(function ($q) use ($search, $op) {
+                $q->where('title', $op, "%{$search}%")
+                  ->orWhere('author', $op, "%{$search}%")
+                  ->orWhere('isbn', $op, "%{$search}%");
             });
         }
 
@@ -48,52 +58,26 @@ class BookController extends Controller
             $query->latest();
         }
 
-        return response()->json($query->paginate($request->input('per_page', 12)));
+        $perPage = min((int) $request->input('per_page', 12), 100);
+
+        return response()->json($query->paginate($perPage));
     }
 
+    /** Return the most borrowed books (default 6, max 50). */
     public function popular(Request $request)
     {
+        $limit = min((int) $request->get('limit', 6), 50);
+
         $books = Book::withCount('borrows')
             ->with('category')
             ->orderByDesc('borrows_count')
-            ->limit($request->get('limit', 6))
+            ->limit($limit)
             ->get();
 
         return response()->json($books);
     }
 
-    public function lookupIsbn(Request $request)
-    {
-        $request->validate(['isbn' => ['required', 'string']]);
-
-        $isbn = preg_replace('/[^0-9Xx]/', '', $request->input('isbn'));
-
-        try {
-            $response = Http::timeout(8)->get('https://www.googleapis.com/books/v1/volumes', [
-                'q' => "isbn:{$isbn}",
-            ]);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'មិនអាចភ្ជាប់ទៅ Google Books API បានទេ'], 503);
-        }
-
-        if (!$response->successful() || empty($response->json('items'))) {
-            return response()->json(['message' => 'រកមិនឃើញសៀវភៅសម្រាប់ ISBN នេះទេ'], 404);
-        }
-
-        $info = $response->json('items.0.volumeInfo');
-
-        return response()->json([
-            'title'           => $info['title'] ?? '',
-            'author'          => implode(', ', $info['authors'] ?? []),
-            'publisher'       => $info['publisher'] ?? '',
-            'publish_year'    => isset($info['publishedDate']) ? (int) substr($info['publishedDate'], 0, 4) : null,
-            'pages'           => $info['pageCount'] ?? null,
-            'description'     => $info['description'] ?? '',
-            'language'        => $info['language'] ?? 'en',
-            'cover_image_url' => $info['imageLinks']['thumbnail'] ?? null,
-        ]);
-    }
-
+    /** Create a book with its cover image and generate its physical copies. */
     public function store(StoreBookRequest $request)
     {
         $validated = $request->validated();
@@ -113,6 +97,7 @@ class BookController extends Controller
             ]);
 
             $this->generateCopies($book, $validated['total_qty']);
+
             return $book;
         });
 
@@ -122,6 +107,7 @@ class BookController extends Controller
         ], 201);
     }
 
+    /** Show one book with details and count the view. */
     public function show(Book $book)
     {
         $book->increment('views_count');
@@ -131,6 +117,7 @@ class BookController extends Controller
         );
     }
 
+    /** Update a book and replace its cover image if a new one is uploaded. */
     public function update(UpdateBookRequest $request, Book $book)
     {
         $validated = $request->validated();
@@ -140,6 +127,8 @@ class BookController extends Controller
                 Storage::disk('public')->delete($book->cover_image);
             }
             $validated['cover_image'] = $request->file('cover_image')->store('books', 'public');
+        } else {
+            unset($validated['cover_image']);
         }
 
         $book->update($validated);
@@ -150,14 +139,22 @@ class BookController extends Controller
         ]);
     }
 
+    /** Add more copies to a book, refresh its stock, and serve waiting reservations. */
     public function addCopies(AddCopiesRequest $request, Book $book)
     {
         $quantity = $request->validated()['quantity'];
 
         DB::transaction(function () use ($book, $quantity) {
             $this->generateCopies($book, $quantity);
-            $book->increment('total_qty', $quantity);
-            $book->increment('available_qty', $quantity);
+
+            // Recalculate from real copies instead of blind increments.
+            $book->update([
+                'total_qty'     => BookCopy::where('book_id', $book->id)->count(),
+                'available_qty' => BookCopy::where('book_id', $book->id)->where('status', 'available')->count(),
+            ]);
+
+            // New copies may serve members who are waiting in the queue.
+            $this->reservations->promoteNextInQueue($book->id);
         });
 
         return response()->json([
@@ -166,16 +163,26 @@ class BookController extends Controller
         ]);
     }
 
+    /** Delete a book unless copies are borrowed or active reservations exist. */
     public function destroy(Book $book)
     {
         if ($book->bookCopies()->where('status', 'borrowed')->exists()) {
             return response()->json(['message' => 'Cannot delete: copies are currently borrowed.'], 422);
         }
 
+        // Do not leave members waiting for a book that no longer exists.
+        if ($book->reservations()->whereIn('status', Reservation::ACTIVE)->exists()) {
+            return response()->json([
+                'message' => 'Cannot delete: members have active reservations for this book. Cancel them first.',
+            ], 422);
+        }
+
         $book->delete();
+
         return response()->json(['message' => 'Book deleted successfully.']);
     }
 
+    /** Create the given number of new, available copies for a book. */
     private function generateCopies(Book $book, int $quantity): void
     {
         for ($i = 0; $i < $quantity; $i++) {
@@ -190,6 +197,7 @@ class BookController extends Controller
         }
     }
 
+    /** Generate a unique copy barcode like BC-26-000123 (ISBN is never generated). */
     private function generateBarcode(): string
     {
         do {

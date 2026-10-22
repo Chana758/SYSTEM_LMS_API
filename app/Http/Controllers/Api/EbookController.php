@@ -11,9 +11,7 @@ use Illuminate\Support\Facades\URL;
 
 class EbookController extends Controller
 {
-    /**
-     * List available e-books, filtered by access rules.
-     */
+    /** List e-books with search, category and format filters, based on access rules. */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -41,10 +39,7 @@ class EbookController extends Controller
         return response()->json($query->paginate($request->get('per_page', 12)));
     }
 
-    /**
-     * Display a specific e-book. Does NOT expose the raw file path —
-     * use the /stream endpoint (signed URL) to actually access the file.
-     */
+    /** Show one e-book with the user's reading progress, without exposing the file path. */
     public function show(Request $request, Ebook $ebook)
     {
         $ebook->increment('view_count');
@@ -68,9 +63,7 @@ class EbookController extends Controller
         return response()->json($data);
     }
 
-    /**
-     * Issue a short-lived signed URL to stream/preview the file in-browser.
-     */
+    /** Issue a 10-minute signed URL to stream the file, if downloads are allowed. */
     public function download(Request $request, Ebook $ebook)
     {
         if (!$ebook->is_downloadable) {
@@ -92,10 +85,7 @@ class EbookController extends Controller
         ]);
     }
 
-    /**
-     * Serve the actual file. Only reachable via a valid signed URL
-     * (see routes/api.php — protected by the 'signed' middleware).
-     */
+    /** Serve the actual file; only reachable through a valid signed URL. */
     public function stream(Request $request, Ebook $ebook)
     {
         if (!$request->hasValidSignature()) {
@@ -109,9 +99,7 @@ class EbookController extends Controller
         return Storage::disk('local')->response($ebook->file_url);
     }
 
-    /**
-     * Get the authenticated user's saved progress for an e-book.
-     */
+    /** Get the logged-in user's saved reading progress (defaults to page 1, 0%). */
     public function getProgress(Request $request, Ebook $ebook)
     {
         $progress = EbookReadingProgress::where('user_id', $request->user()->id)
@@ -124,9 +112,7 @@ class EbookController extends Controller
         ]);
     }
 
-    /**
-     * Save/update the authenticated user's reading progress.
-     */
+    /** Save or update the logged-in user's reading progress. */
     public function updateProgress(Request $request, Ebook $ebook)
     {
         $validated = $request->validate([
@@ -146,9 +132,7 @@ class EbookController extends Controller
         return response()->json(['message' => 'Progress saved.', 'data' => $progress]);
     }
 
-    /**
-     * Store a newly created e-book (Admin/Librarian only — route-guarded).
-     */
+    /** Upload and create a new e-book, stored privately. */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -177,9 +161,7 @@ class EbookController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an existing e-book.
-     */
+    /** Update an e-book and replace its file if a new one is uploaded. */
     public function update(Request $request, Ebook $ebook)
     {
         $validated = $request->validate([
@@ -206,9 +188,7 @@ class EbookController extends Controller
         ]);
     }
 
-    /**
-     * Remove an e-book (soft delete).
-     */
+    /** Remove an e-book (soft delete). */
     public function destroy(Ebook $ebook)
     {
         $ebook->delete();

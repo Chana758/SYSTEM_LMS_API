@@ -9,9 +9,7 @@ use Illuminate\Http\Request;
 
 class EbookFavoriteController extends Controller
 {
-    /**
-     * List the authenticated user's favorited e-books.
-     */
+    /** List the logged-in user's favorite e-books, newest first. */
     public function index(Request $request)
     {
         $favorites = EbookFavorite::with('ebook.book.category')
@@ -22,9 +20,7 @@ class EbookFavoriteController extends Controller
         return response()->json($favorites);
     }
 
-    /**
-     * Toggle favorite status for an e-book.
-     */
+    /** Add the e-book to favorites, or remove it if it is already there. */
     public function toggle(Request $request, Ebook $ebook)
     {
         $existing = EbookFavorite::where('user_id', $request->user()->id)

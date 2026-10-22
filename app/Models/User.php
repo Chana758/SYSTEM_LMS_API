@@ -28,15 +28,10 @@ class User extends Authenticatable
         'qr_login_token_expires_at' => 'datetime',
     ];
 
-    /**
-     * NEW — always include this derived boolean when a User is
-     * serialized (directly, or nested via ->load('user') on Member/
-     * Librarian). qr_login_token itself stays hidden/hashed, but the
-     * frontend needs SOME way to know "has this person's card been
-     * issued yet?" without ever seeing the token itself.
-     */
+    // Always include has_qr_card in serialized output (the token itself stays hidden)
     protected $appends = ['has_qr_card'];
 
+    /** True if the user has a QR login card that has not expired. */
     public function getHasQrCardAttribute(): bool
     {
         return ! is_null($this->qr_login_token)
@@ -68,5 +63,4 @@ class User extends Authenticatable
     {
         return $this->hasMany(Notification::class);
     }
-    
 }

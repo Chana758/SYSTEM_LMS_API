@@ -14,10 +14,7 @@ use Illuminate\Support\Facades\Hash;
 
 class MemberController extends Controller
 {
-    /**
-     * List all members — supports search, status filter, membership type filter, and pagination.
-     * GET /api/members?search=&status=&membership_type=&page=1&per_page=15
-     */
+    /** List members with search, status and membership type filters. */
     public function index(Request $request)
     {
         $query = Member::query()->with('user');
@@ -46,10 +43,7 @@ class MemberController extends Controller
         return response()->json($members);
     }
 
-    /**
-     * Create a new member.
-     * POST /api/members
-     */
+    /** Create a member (user account + member profile). */
     public function store(StoreMemberRequest $request)
     {
         $validated = $request->validated();
@@ -86,19 +80,13 @@ class MemberController extends Controller
         ], 201);
     }
 
-    /**
-     * View member details.
-     * GET /api/members/{member}
-     */
+    /** Show one member with user and role. */
     public function show(Member $member)
     {
-        return response()->json($member->load('user'));
+        return response()->json($member->load('user.role'));
     }
 
-    /**
-     * Update member (User and Member profile fields).
-     * PUT /api/members/{member}
-     */
+    /** Update a member, splitting fields between the user and member records. */
     public function update(UpdateMemberRequest $request, Member $member)
     {
         $validated = $request->validated();
@@ -123,10 +111,7 @@ class MemberController extends Controller
         ]);
     }
 
-    /**
-     * Soft delete a member.
-     * DELETE /api/members/{member}
-     */
+    /** Soft delete a member. */
     public function destroy(Member $member)
     {
         $member->delete();
@@ -134,10 +119,7 @@ class MemberController extends Controller
         return response()->json(['message' => 'Member deleted successfully.']);
     }
 
-    /**
-     * Restore a soft-deleted member.
-     * POST /api/members/{id}/restore
-     */
+    /** Restore a soft-deleted member. */
     public function restore($id)
     {
         $member = Member::withTrashed()->findOrFail($id);
@@ -149,23 +131,7 @@ class MemberController extends Controller
         ]);
     }
 
-    /**
-     * GET /api/member/profile
-     * Any authenticated member — view own membership profile (read-only).
-     *
-     * FIX: was completely missing on the backend even though
-     * MyProfilePage.vue on the frontend already calls
-     * store.fetchMyProfile(), which is meant to hit this endpoint.
-     *
-     * Deliberately read-only (no updateMyProfile companion method) to
-     * match the frontend's design: MyProfilePage.vue tells the member
-     * to "visit the library desk or contact a librarian" to change
-     * contact details, rather than exposing a self-edit form. This
-     * keeps membership_type, max_borrow_limit, status, AND contact
-     * fields all admin/librarian-controlled via the existing
-     * PUT /members/{member} route — there is no separate, looser
-     * validation surface a member could exploit to self-edit anything.
-     */
+    /** Show the logged-in member's own profile (read-only; only staff can edit it). */
     public function myProfile(Request $request)
     {
         $member = Member::where('user_id', $request->user()->id)
@@ -181,6 +147,7 @@ class MemberController extends Controller
         return response()->json($member);
     }
 
+    /** Generate a unique membership number like MEM-2026-000123 (includes soft-deleted records). */
     private function generateMembershipNo(): string
     {
         do {

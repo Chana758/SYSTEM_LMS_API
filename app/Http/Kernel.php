@@ -65,6 +65,10 @@ class Kernel extends HttpKernel
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
-        'role'=> \App\Http\Middleware\CheckRole::class,
+        'role' => \App\Http\Middleware\CheckRole::class,
     ];
+
+    // NOTE: the schedule() method that was here is removed. The HTTP Kernel never
+    // runs the scheduler (and `Schedule` was not imported). It belongs in
+    // app/Console/Kernel.php, see the next file.
 }

@@ -3,15 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Notification\NotificationRequest;
 use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
-    /**
-     * Display a listing of notifications for the authenticated user.
-     */
+    /** List the logged-in user's notifications with type, read and search filters. */
     public function index(Request $request)
     {
         $query = Notification::where('user_id', $request->user()->id)->latest();
@@ -22,25 +21,39 @@ class NotificationController extends Controller
         if ($request->filled('is_read')) {
             $query->where('is_read', filter_var($request->is_read, FILTER_VALIDATE_BOOLEAN));
         }
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(fn ($q) => $q->where('title', 'like', "%{$s}%")->orWhere('message', 'like', "%{$s}%"));
+        }
+        $this->applyExclude($query, $request);
 
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
-    /**
-     * Get unread notification count.
-     */
+    /** Return the unread count, in total and grouped by type. */
     public function unreadCount(Request $request)
     {
-        $count = Notification::where('user_id', $request->user()->id)
-            ->where('is_read', false)
-            ->count();
+        $query = Notification::where('user_id', $request->user()->id)->where('is_read', false);
+        $this->applyExclude($query, $request);
 
-        return response()->json(['count' => $count]);
+        $byType = $query->selectRaw('type, COUNT(*) as c')->groupBy('type')->pluck('c', 'type');
+
+        return response()->json([
+            'count'   => (int) $byType->sum(),
+            'by_type' => $byType,
+        ]);
     }
 
-    /**
-     * View a single notification and mark it as read.
-     */
+    /** Skip muted types sent by the client as exclude_types[]=fine&exclude_types[]=system. */
+    private function applyExclude($query, Request $request): void
+    {
+        $exclude = array_filter((array) $request->input('exclude_types', []));
+        if ($exclude) {
+            $query->whereNotIn('type', $exclude);
+        }
+    }
+
+    /** Show one notification and mark it as read. */
     public function show(Request $request, Notification $notification)
     {
         $this->authorizeOwner($request, $notification);
@@ -52,9 +65,7 @@ class NotificationController extends Controller
         return response()->json($notification);
     }
 
-    /**
-     * Mark a specific notification as read.
-     */
+    /** Mark one notification as read. */
     public function markRead(Request $request, Notification $notification)
     {
         $this->authorizeOwner($request, $notification);
@@ -63,9 +74,7 @@ class NotificationController extends Controller
         return response()->json(['message' => 'Marked as read.', 'data' => $notification->fresh()]);
     }
 
-    /**
-     * Mark all notifications for the authenticated user as read.
-     */
+    /** Mark all of the logged-in user's notifications as read. */
     public function markAllRead(Request $request)
     {
         Notification::where('user_id', $request->user()->id)
@@ -75,9 +84,7 @@ class NotificationController extends Controller
         return response()->json(['message' => 'All notifications marked as read.']);
     }
 
-    /**
-     * Delete a notification.
-     */
+    /** Delete one notification. */
     public function destroy(Request $request, Notification $notification)
     {
         $this->authorizeOwner($request, $notification);
@@ -86,51 +93,36 @@ class NotificationController extends Controller
         return response()->json(['message' => 'Notification deleted.']);
     }
 
-    /**
-     * Admin/Librarian — send a notification to a specific user or broadcast to all members.
-     */
-    public function store(Request $request)
+    /** Send a notification to one user, or broadcast it to all members (staff). */
+    public function store(NotificationRequest $request)
     {
-        // Server-side guard: only admin/librarian may send/broadcast notifications.
-        // Relying on the frontend's `canSend` check alone is not enough.
-        $role = $request->user()->role->name ?? null;
-        if (!in_array($role, ['admin', 'librarian'], true)) {
-            abort(403, 'Only admins or librarians can send notifications.');
-        }
+        $validated = $request->validated();
 
-        $validated = $request->validate([
-            'title'     => ['required', 'string', 'max:255'],
-            'message'   => ['required', 'string'],
-            'type'      => ['required', 'in:overdue,reservation,fine,system,announcement'],
-            'link'      => ['nullable', 'string'],
-            'user_id'   => ['nullable', 'exists:users,id'],
-            'broadcast' => ['nullable', 'boolean'],
-        ]);
+        if ($validated['broadcast']) {
+            $now   = now();
+            $count = 0;
 
-        if (!empty($validated['broadcast'])) {
-            $memberIds = User::whereHas('role', fn ($q) => $q->where('name', 'member'))
-                ->pluck('id');
+            // chunkById keeps memory flat even with thousands of members
+            User::whereHas('role', fn ($q) => $q->where('name', 'member'))
+                ->select('id')
+                ->chunkById(500, function ($users) use ($validated, $now, &$count) {
+                    $rows = $users->map(fn ($u) => [
+                        'user_id'    => $u->id,
+                        'title'      => $validated['title'],
+                        'message'    => $validated['message'],
+                        'type'       => $validated['type'],
+                        'link'       => $validated['link'] ?? null,
+                        'is_read'    => false,
+                        'sent_at'    => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ])->all();
 
-            $now = now();
-            $rows = $memberIds->map(fn ($id) => [
-                'user_id'    => $id,
-                'title'      => $validated['title'],
-                'message'    => $validated['message'],
-                'type'       => $validated['type'],
-                'link'       => $validated['link'] ?? null,
-                'is_read'    => false,
-                'sent_at'    => $now,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ])->toArray();
+                    Notification::insert($rows);
+                    $count += count($rows);
+                });
 
-            Notification::insert($rows);
-
-            return response()->json(['message' => "Notification sent to {$memberIds->count()} member(s)."], 201);
-        }
-
-        if (empty($validated['user_id'])) {
-            return response()->json(['message' => 'Either user_id or broadcast must be provided.'], 422);
+            return response()->json(['message' => "Notification sent to {$count} member(s)."], 201);
         }
 
         $notification = Notification::create([
@@ -146,12 +138,10 @@ class NotificationController extends Controller
         return response()->json(['message' => 'Notification sent.', 'data' => $notification], 201);
     }
 
-    /**
-     * Check if the authenticated user owns the notification.
-     */
+    /** Abort with 403 unless the logged-in user owns the notification. */
     private function authorizeOwner(Request $request, Notification $notification): void
     {
-        if ($notification->user_id !== $request->user()->id) {
+        if ((int) $notification->user_id !== (int) $request->user()->id) {
             abort(403, 'You are not authorized to access this notification.');
         }
     }

@@ -14,22 +14,23 @@ class NotificationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title' => ['required', 'string', 'max:150'],
-            'message' => ['required', 'string', 'max:1000'],
-            'type' => ['required', 'string', 'in:overdue,reservation,fine,announcement,system'],
+            'title'     => ['required', 'string', 'max:150'],
+            'message'   => ['required', 'string', 'max:1000'],
+            'type'      => ['required', 'string', 'in:overdue,reservation,fine,announcement,system'],
+            'link'      => ['nullable', 'string', 'max:255'],
             'broadcast' => ['required', 'boolean'],
             // required only when NOT broadcasting to everyone
-            'user_id' => ['required_if:broadcast,false', 'nullable', 'exists:users,id'],
+            'user_id'   => ['required_if:broadcast,false', 'nullable', 'exists:users,id'],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'title.required' => __('validation.custom.notification.title.required'),
-            'message.required' => __('validation.custom.notification.message.required'),
+            'title.required'      => __('validation.custom.notification.title.required'),
+            'message.required'    => __('validation.custom.notification.message.required'),
             'user_id.required_if' => __('validation.custom.notification.user_id.required_if'),
-            'user_id.exists' => __('validation.custom.notification.user_id.exists'),
+            'user_id.exists'      => __('validation.custom.notification.user_id.exists'),
         ];
     }
 }

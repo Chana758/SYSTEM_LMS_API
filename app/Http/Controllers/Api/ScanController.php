@@ -10,12 +10,10 @@ use Illuminate\Http\Request;
 
 class ScanController extends Controller
 {
-    /**
-     * POST /scan
-     * Any authenticated user (in practice: admin/librarian at the front
-     * desk) — process a scanned barcode, cross-check its real-time state,
-     * and log the attempt for audit purposes.
-     */
+    /** Loan statuses that mean "the copy is currently out". */
+    private const ACTIVE_LOAN_STATUSES = ['borrowed', 'overdue'];
+
+    /** POST /scan - process a scanned barcode and log the attempt. */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -29,52 +27,46 @@ class ScanController extends Controller
             ->first();
 
         $activeBorrow = null;
+        $bookStats = null;
         $result = 'not_found';
+        $code = null;
 
         if ($bookCopy) {
             $result = 'success';
 
-            // FIX: fetch the active (still-borrowed) transaction for this
-            // copy REGARDLESS of scan_type. All three flows need it:
-            //   - lookup: staff need to see "Borrowed by X" even when just
-            //             checking a book's status.
-            //   - return: needed to know what to return / compute overdue.
-            //   - borrow: needed so a copy that's already checked out can
-            //             offer "Add to Reservation Queue" instead of a
-            //             dead-end error.
-            // Previously this was only computed for scan_type === 'return',
-            // which silently broke the lookup banner and the borrow
-            // reservation flow for every other scan type.
+            // Needed by all scan types (lookup banner, return, reservation flow)
             $activeBorrow = BorrowTransaction::with('member.user:id,name')
                 ->where('book_copy_id', $bookCopy->id)
-                ->where('status', 'borrowed')
+                ->whereIn('status', self::ACTIVE_LOAN_STATUSES)
                 ->latest('borrow_date')
                 ->first();
 
-            if ($validated['scan_type'] === 'return') {
-                if (!$activeBorrow) {
-                    // Copy exists but nothing is currently borrowed against
-                    // it — flag as an error rather than a false "success"
-                    // so staff aren't misled into thinking a return happened.
-                    $result = 'error';
-                }
+            // Return scan with nothing borrowed is an error
+            if ($validated['scan_type'] === 'return' && !$activeBorrow) {
+                $result = 'error';
+                $code = 'not_borrowed';
             }
 
-            if ($validated['scan_type'] === 'borrow' && $bookCopy->status !== 'available') {
-                // FIX: only treat this as a hard error when there is truly
-                // nothing to act on (e.g. a damaged/lost copy with no
-                // active loan). If the copy is checked out AND we found
-                // its active_borrow, keep result = 'success' so the
-                // frontend can render the "reserve for member" flow
-                // instead of a dead-end error banner.
-                if (!$activeBorrow) {
-                    $result = 'error';
-                }
+            // Unavailable copy with no active loan (e.g. damaged/lost) is an error;
+            // if it is checked out, stay 'success' so the reservation flow works
+            if ($validated['scan_type'] === 'borrow'
+                && $bookCopy->status !== 'available'
+                && !$activeBorrow) {
+                $result = 'error';
+                $code = 'copy_unavailable';
             }
 
-            // scan_type === 'lookup' never forces an error based on
-            // status — it's read-only, so any found copy is a 'success'
-            // and active_borrow (if any) is simply shown for context.
+            // Stock of the whole title, used by the borrow / reserve decision in the UI
+            $totalCopies = BookCopy::where('book_id', $bookCopy->book_id)->count();
+            $availableCopies = BookCopy::where('book_id', $bookCopy->book_id)
+                ->where('status', 'available')
+                ->count();
+
+            $bookStats = [
+                'total_copies' => $totalCopies,
+                'available_copies' => $availableCopies,
+                'can_borrow_other' => $availableCopies > 0,
+            ];
         }
 
         $log = ScanHistory::create([
@@ -88,16 +80,26 @@ class ScanController extends Controller
 
         return response()->json([
             'result' => $result,
+            'code' => $code,
+            'message' => $this->messageFor($code),
             'book_copy' => $bookCopy,
             'active_borrow' => $activeBorrow,
+            'book_stats' => $bookStats,
             'log' => $log,
         ], $bookCopy ? 200 : 404);
     }
 
-    /**
-     * GET /scan/history
-     * Accessible by: admin, librarian
-     */
+    /** Fallback English text; the frontend prefers its own translation of `code`. */
+    private function messageFor(?string $code): ?string
+{
+    return match ($code) {
+        'not_borrowed' => 'This copy is not currently borrowed, so it cannot be returned.',
+        'copy_unavailable' => 'This copy is damaged or unavailable for borrowing.',
+        default => null,
+    };
+}
+
+    /** GET /scan/history - filterable scan log (admin, librarian). */
     public function index(Request $request)
     {
         $query = ScanHistory::with(['user:id,name', 'bookCopy.book:id,title'])
@@ -130,10 +132,7 @@ class ScanController extends Controller
         return response()->json($query->paginate($request->get('per_page', 20)));
     }
 
-    /**
-     * GET /scan/summary
-     * Accessible by: admin, librarian
-     */
+    /** GET /scan/summary - scan counts (admin, librarian). */
     public function summary()
     {
         return response()->json([

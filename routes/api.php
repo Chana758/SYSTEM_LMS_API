@@ -8,15 +8,14 @@ use App\Http\Controllers\Api\{
     LibrarianController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
     RecommendationController,
     ReportController,
-    ReservationController, ScanController, SettingController,
-    RemoteScanController, RemoteLoginController
+    ReservationController, ScanController, SettingController,BookCopyController,UserRoleController
 };
 use Illuminate\Support\Facades\Route;
 
 /*
-|--------------------------------------------------------------------------
+|---------------
 | API Routes
-|--------------------------------------------------------------------------
+|---------------
 */
 
 // PUBLIC (No auth:sanctum required) - Needed for Login/Register pages
@@ -26,8 +25,11 @@ Route::get('branding', [SettingController::class, 'branding']);
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
-
     Route::post('login/qr', [AuthController::class, 'loginWithQr']);
+
+    // Forgot / reset password (frontend calls /auth/forgot-password and /auth/reset-password)
+    Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+    Route::post('reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
@@ -43,11 +45,10 @@ Route::prefix('auth')->group(function () {
         Route::get('qr-token/status', [AuthController::class, 'qrCardStatus']);
         Route::post('qr-token/revoke', [AuthController::class, 'revokeQrToken']);
 
-        Route::middleware('role:admin,librarian')
-            ->post('users/{user}/qr-token/generate', [AuthController::class, 'generateQrTokenFor']);
-
-        Route::middleware('role:admin,librarian')
-            ->get('pending-cards', [AuthController::class, 'pendingCards']);
+        Route::middleware('role:admin,librarian')->group(function () {
+            Route::post('users/{user}/qr-token/generate', [AuthController::class, 'generateQrTokenFor']);
+            Route::get('pending-cards', [AuthController::class, 'pendingCards']);
+        });
 
         Route::middleware('role:admin')->post('create-librarian', [AuthController::class, 'createLibrarian']);
     });
@@ -64,7 +65,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('{book}/reviews', [BookReviewController::class, 'store']);
 
         Route::middleware('role:admin,librarian')->group(function () {
-            Route::post('lookup-isbn', [BookController::class, 'lookupIsbn']);
             Route::post('/', [BookController::class, 'store']);
             Route::put('{book}', [BookController::class, 'update']);
             Route::post('{book}/add-copies', [BookController::class, 'addCopies']);
@@ -79,6 +79,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('{category}', [CategoryController::class, 'update']);
             Route::delete('{category}', [CategoryController::class, 'destroy']);
         });
+    });
+    Route::prefix('book-copies')->middleware('role:admin,librarian')->group(function () {
+        Route::patch('{copy}', [BookCopyController::class, 'update']);
+        Route::delete('{copy}', [BookCopyController::class, 'destroy']);
     });
 });
 
@@ -97,16 +101,25 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // 4. CIRCULATION: RESERVATIONS
+// - static paths (my-list, stats) are declared BEFORE {reservation}
+// - whereNumber() stops "stats" / "my-list" being captured as an id
+// - members can open + cancel THEIR OWN reservation (ReservationPolicy checks ownership)
+// - only staff can list everything, see stats and fulfill
 Route::middleware('auth:sanctum')->prefix('reservations')->group(function () {
-    Route::get('/my-list', [ReservationController::class, 'myReservations']);
-    Route::post('/', [ReservationController::class, 'store']);
-    Route::post('{reservation}/cancel', [ReservationController::class, 'cancel']);
+    // Any authenticated user
+    Route::get('my-list', [ReservationController::class, 'myReservations']);
+    Route::post('/', [ReservationController::class, 'store'])->middleware('throttle:20,1');
 
+    // Staff only (declared BEFORE {reservation})
     Route::middleware('role:admin,librarian')->group(function () {
         Route::get('/', [ReservationController::class, 'index']);
-        Route::get('{reservation}', [ReservationController::class, 'show']);
-        Route::post('{reservation}/fulfill', [ReservationController::class, 'fulfill']);
+        Route::get('stats', [ReservationController::class, 'stats']);
+        Route::post('{reservation}/fulfill', [ReservationController::class, 'fulfill'])->whereNumber('reservation');
     });
+
+    // Owner or staff (ReservationPolicy decides)
+    Route::get('{reservation}', [ReservationController::class, 'show'])->whereNumber('reservation');
+    Route::post('{reservation}/cancel', [ReservationController::class, 'cancel'])->whereNumber('reservation');
 });
 
 // 4.5. DIGITAL LIBRARY: EBOOKS
@@ -143,7 +156,7 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('members')->
 
 Route::middleware('auth:sanctum')->get('/member/profile', [MemberController::class, 'myProfile']);
 
-// 5.6. MEMBERSHIP TYPES (master data for Member forms)
+// 5.6. MEMBERSHIP TYPES
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('membership-types', [MembershipTypeController::class, 'index']);
 
@@ -161,6 +174,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('librarians')->group(f
     Route::put('{librarian}', [LibrarianController::class, 'update']);
     Route::delete('{librarian}', [LibrarianController::class, 'destroy']);
 });
+Route::middleware(['auth:sanctum', 'role:admin'])->patch('users/{user}/role', [UserRoleController::class, 'update']);
 
 // 6. FINES
 Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('fines')->group(function () {
@@ -184,22 +198,6 @@ Route::middleware('auth:sanctum')->prefix('scan')->group(function () {
         Route::get('summary', [ScanController::class, 'summary']);
     });
 });
-
-// 6.6. REMOTE SCAN (phone-as-camera pairing for the Scanner page — staff already logged in)
-// Route::middleware('auth:sanctum')->group(function () {
-//     Route::post('/remote-scan/session', [RemoteScanController::class, 'createSession']);
-// });
-// Route::middleware('throttle:20,1')->group(function () {
-//     Route::get('/remote-scan/{sessionId}/status', [RemoteScanController::class, 'status']);
-//     Route::post('/remote-scan/{sessionId}/submit', [RemoteScanController::class, 'submitScan']);
-// });
-
-// 6.7. REMOTE LOGIN (phone-as-camera pairing for the Login page — nobody is logged in yet, all public)
-// Route::middleware('throttle:20,1')->group(function () {
-//     Route::post('/remote-login/session', [RemoteLoginController::class, 'createSession']);
-//     Route::get('/remote-login/{sessionId}/status', [RemoteLoginController::class, 'status']);
-//     Route::post('/remote-login/{sessionId}/submit', [RemoteLoginController::class, 'submitScan']);
-// });
 
 // 7. SETTINGS & MISC
 Route::middleware('auth:sanctum')->prefix('settings')->group(function () {
@@ -239,20 +237,14 @@ Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
     Route::middleware('role:admin,librarian')->post('/', [NotificationController::class, 'store']);
 });
 
-// 10. AI CHATBOT (OpenAI-powered, function/tool calling — see ChatbotAiService)
-//
-// FIX: throttle added. Each chat message can trigger up to
-// ChatbotAiService::MAX_TOOL_ROUNDS (5) OpenAI calls in a single
-// request, so without a rate limit a single user could run up real
-// API cost very quickly, by accident or on purpose. 20 messages/minute
-// is generous for a real conversation but blocks abuse/spam loops.
+// 10. AI CHATBOT (throttled: each message can trigger several OpenAI calls)
 Route::middleware(['auth:sanctum', 'throttle:20,1'])->prefix('chatbot')->group(function () {
     Route::get('history', [ChatbotController::class, 'index']);
     Route::post('/', [ChatbotController::class, 'store']);
     Route::delete('history', [ChatbotController::class, 'clear']);
 });
 
-// 11. AI RECOMMENDATIONS (content-based)
+// 11. AI RECOMMENDATIONS
 Route::middleware('auth:sanctum')->prefix('recommendations')->group(function () {
     Route::get('/', [RecommendationController::class, 'index']);
     Route::post('{book}/click', [RecommendationController::class, 'markClicked']);

@@ -13,11 +13,6 @@ class Book extends Model
 {
     use HasFactory, SoftDeletes;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'title',
         'isbn',
@@ -41,50 +36,42 @@ class Book extends Model
         'rating_count',
     ];
 
-    /**
-     * Get the category that owns the book.
-     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
     }
 
-    /**
-     * Get the individual physical copies of this book.
-     */
     public function bookCopies(): HasMany
     {
         return $this->hasMany(BookCopy::class);
     }
 
-    /**
-     * Get all borrow transactions for all copies of this book.
-     * Uses HasManyThrough to aggregate data from BookCopy.
-     */
     public function borrows(): HasManyThrough
     {
         return $this->hasManyThrough(BorrowTransaction::class, BookCopy::class);
     }
 
-    /**
-     * Get the reservations associated with this book.
-     */
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class);
     }
 
-    /**
-     * Get the reviews for this book.
-     */
     public function reviews(): HasMany
     {
         return $this->hasMany(BookReview::class);
     }
 
-    // Ebook
     public function ebook()
     {
         return $this->hasOne(Ebook::class);
+    }
+
+    /** Recount total_qty / available_qty from book_copies (soft-deleted copies excluded). */
+    public function syncQty(): void
+    {
+        $this->forceFill([
+            'total_qty'     => $this->bookCopies()->count(),
+            'available_qty' => $this->bookCopies()->where('status', 'available')->count(),
+        ])->save();
     }
 }

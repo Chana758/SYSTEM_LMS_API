@@ -4,19 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class BorrowTransaction extends Model
 {
     use HasFactory;
 
-    /**
-     * The table associated with the model.
-     */
     protected $table = 'borrow_transactions';
 
-    /**
-     * The attributes that are mass assignable.
-     */
     protected $fillable = [
         'book_copy_id',
         'member_id',
@@ -27,38 +23,31 @@ class BorrowTransaction extends Model
         'status',
         'renewed_count',
         'notes',
-        'fine_amount',
-        'fine_status',
     ];
 
-    /**
-     * The attributes that should be cast to native types.
-     */
     protected $casts = [
-        'borrow_date' => 'date',
-        'due_date'    => 'date',
-        'return_date' => 'date',
+        'borrow_date'   => 'date',
+        'due_date'      => 'date',
+        'return_date'   => 'date',
+        'renewed_count' => 'integer',
     ];
 
-    // --- Relationships ---
-
-    public function bookCopy()
+    public function bookCopy(): BelongsTo
     {
         return $this->belongsTo(BookCopy::class, 'book_copy_id');
     }
 
-    public function member()
+    public function member(): BelongsTo
     {
         return $this->belongsTo(Member::class, 'member_id');
     }
 
-    public function librarian()
+    public function librarian(): BelongsTo
     {
         return $this->belongsTo(Librarian::class, 'librarian_id');
     }
 
-    // ★★★ ថ្មី — ត្រូវការសម្រាប់ BorrowController::index()/show() ដែលហៅ with(['fines'])
-    public function fines()
+    public function fines(): HasMany
     {
         return $this->hasMany(Fine::class, 'borrow_id');
     }

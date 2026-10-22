@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 
 class BookReviewController extends Controller
 {
+    /** List a book's reviews, newest first, 10 per page. */
     public function index(Book $book)
     {
         return response()->json(
@@ -17,6 +18,7 @@ class BookReviewController extends Controller
         );
     }
 
+    /** Add or update the member's review of a book, then refresh the book's rating. */
     public function store(Request $request, Book $book)
     {
         $validated = $request->validate([
@@ -43,6 +45,7 @@ class BookReviewController extends Controller
         ], 201);
     }
 
+    /** Recalculate the book's average rating and review count from all its reviews. */
     private function recalculateRating(Book $book): void
     {
         $stats = $book->reviews()->selectRaw('AVG(rating) as avg_rating, COUNT(*) as total')->first();

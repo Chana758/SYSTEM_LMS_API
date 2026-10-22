@@ -14,10 +14,7 @@ use Illuminate\Support\Facades\Hash;
 
 class LibrarianController extends Controller
 {
-    /**
-     * List all librarians — supports search and filtering.
-     * GET /api/librarians?search=&status=&department=
-     */
+    /** List librarians with search, status and department filters. */
     public function index(Request $request)
     {
         $query = Librarian::query()->with('user');
@@ -44,10 +41,7 @@ class LibrarianController extends Controller
         return response()->json($query->latest()->paginate($request->input('per_page', 15)));
     }
 
-    /**
-     * Create a new librarian.
-     * POST /api/librarians
-     */
+    /** Create a librarian (user account + librarian profile). */
     public function store(StoreLibrarianRequest $request)
     {
         $validated = $request->validated();
@@ -81,19 +75,13 @@ class LibrarianController extends Controller
         ], 201);
     }
 
-    /**
-     * Display librarian details.
-     * GET /api/librarians/{librarian}
-     */
+    /** Show one librarian with user and role. */
     public function show(Librarian $librarian)
     {
-        return response()->json($librarian->load('user'));
+        return response()->json($librarian->load('user.role'));
     }
 
-    /**
-     * Update librarian information.
-     * PUT /api/librarians/{librarian}
-     */
+    /** Update a librarian, splitting fields between the user and librarian records. */
     public function update(UpdateLibrarianRequest $request, Librarian $librarian)
     {
         $validated = $request->validated();
@@ -116,20 +104,14 @@ class LibrarianController extends Controller
         ]);
     }
 
-    /**
-     * Soft delete a librarian.
-     * DELETE /api/librarians/{librarian}
-     */
+    /** Soft delete a librarian. */
     public function destroy(Librarian $librarian)
     {
         $librarian->delete();
         return response()->json(['message' => 'Librarian deleted successfully.']);
     }
 
-    /**
-     * Restore a deleted librarian.
-     * POST /api/librarians/{id}/restore
-     */
+    /** Restore a soft-deleted librarian. */
     public function restore($id)
     {
         $librarian = Librarian::withTrashed()->findOrFail($id);
@@ -141,6 +123,7 @@ class LibrarianController extends Controller
         ]);
     }
 
+    /** Generate a unique employee ID like EMP-2026-0042 (includes soft-deleted records). */
     private function generateEmployeeId(): string
     {
         do {

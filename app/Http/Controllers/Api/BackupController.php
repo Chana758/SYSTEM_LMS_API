@@ -9,10 +9,7 @@ use Illuminate\Support\Facades\Process;
 
 class BackupController extends Controller
 {
-    /**
-     * GET /settings/backup/history
-     * Accessible by: admin, librarian
-     */
+    /** List backup history, newest first. */
     public function index(Request $request)
     {
         $backups = Backup::with('performer:id,name')
@@ -22,54 +19,48 @@ class BackupController extends Controller
         return response()->json($backups);
     }
 
-    /**
-     * GET /settings/backup/create
-     * Accessible by: admin only
-     * Creates a PostgreSQL dump and streams it for download.
-     */
+    /** Create a PostgreSQL dump, log it, and send it as a download. */
     public function create(Request $request)
     {
         $filename = 'backup-' . now()->format('Y-m-d_His') . '.sql';
-        $path = storage_path('app/backups/' . $filename);
+        $dir = storage_path('app/backups');
+        $path = $dir . '/' . $filename;
 
-        if (!is_dir(storage_path('app/backups'))) {
-            mkdir(storage_path('app/backups'), 0755, true);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
         }
 
-        $host = config('database.connections.pgsql.host');
-        $port = config('database.connections.pgsql.port');
-        $db   = config('database.connections.pgsql.database');
-        $user = config('database.connections.pgsql.username');
-        $pass = config('database.connections.pgsql.password');
+        $conn = config('database.connections.pgsql');
 
-        // FIX: escape EVERY variable interpolated into the shell command,
-        // not just $path and $db. Even though host/port/user come from
-        // config() rather than direct user input, treating all shell
-        // arguments as untrusted is the correct defensive default —
-        // config values can still change (multi-tenant setups, env
-        // injection, etc.) and cost of escaping is zero.
-        $result = Process::env(['PGPASSWORD' => $pass])->run(
-            'pg_dump -h ' . escapeshellarg($host) .
-            ' -p ' . escapeshellarg($port) .
-            ' -U ' . escapeshellarg($user) .
-            ' --no-owner --no-privileges' .
-            ' -f ' . escapeshellarg($path) .
-            ' ' . escapeshellarg($db)
-        );
+        $result = Process::timeout(300)
+            ->env(['PGPASSWORD' => (string) ($conn['password'] ?? '')])
+            ->run([
+                config('database.pg_tools.dump'),
+                '-h', (string) $conn['host'],
+                '-p', (string) $conn['port'],
+                '-U', (string) $conn['username'],
+                '--no-owner',
+                '--no-privileges',
+                '--clean',        // so the dump can be restored over an existing DB
+                '--if-exists',
+                '-f', $path,
+                (string) $conn['database'],
+            ]);
 
-        // Log the attempt regardless of outcome
         if ($result->failed() || !file_exists($path)) {
+            $error = trim($result->errorOutput()) ?: 'Backup file was not created.';
+
             Backup::create([
                 'performed_by' => $request->user()->id,
                 'file_name' => $filename,
                 'file_path' => $path,
                 'type' => 'manual',
                 'status' => 'failed',
-                'error_message' => $result->errorOutput() ?: 'Backup file was not created.',
+                'error_message' => $error,
             ]);
 
             return response()->json([
-                'message' => 'Failed to create backup: ' . $result->errorOutput(),
+                'message' => 'Failed to create backup: ' . $error,
             ], 500);
         }
 
@@ -85,39 +76,27 @@ class BackupController extends Controller
         return response()->download($path, $filename)->deleteFileAfterSend(true);
     }
 
-    /**
-     * POST /settings/backup/restore
-     * Accessible by: admin only
-     */
+    /** Restore the database from an uploaded .sql file (requires typing RESTORE to confirm). */
     public function restore(Request $request)
     {
         $request->validate([
             'backup_file' => ['required', 'file', 'mimes:sql,txt', 'max:51200'], // Max 50MB
-            // FIX: require an explicit typed confirmation string from the client
-            // so this destructive action can never fire from a stray/duplicate
-            // request. The Vue layer pairs this with a JS confirm dialog (see
-            // BackupSettings.vue below) — belt and suspenders.
+            // Explicit typed confirmation so this destructive action can't fire by accident.
             'confirm' => ['required', 'in:RESTORE'],
         ]);
 
         $file = $request->file('backup_file');
         $tempPath = $file->getRealPath();
 
-        // FIX: basic sanity check on file content before executing it via
-        // psql. This is NOT full SQL validation (that's not realistically
-        // possible/desirable here) — it's a cheap guard against obviously
-        // wrong uploads (empty file, binary garbage, non-SQL text) so we
-        // don't silently wreck the DB connection on garbage input.
+        // Cheap sanity check: reject empty or obviously non-text uploads.
         $preview = file_get_contents($tempPath, false, null, 0, 4096);
 
-        if (trim($preview) === '') {
+        if ($preview === false || trim($preview) === '') {
             return response()->json([
                 'message' => 'Failed to restore backup: the uploaded file is empty.',
             ], 422);
         }
 
-        // Reject files that don't look like plain SQL text at all
-        // (e.g. accidental binary/image upload renamed to .sql).
         if (!mb_check_encoding($preview, 'UTF-8') && !mb_check_encoding($preview, 'ASCII')) {
             Backup::create([
                 'performed_by' => $request->user()->id,
@@ -133,33 +112,34 @@ class BackupController extends Controller
             ], 422);
         }
 
-        $host = config('database.connections.pgsql.host');
-        $port = config('database.connections.pgsql.port');
-        $db   = config('database.connections.pgsql.database');
-        $user = config('database.connections.pgsql.username');
-        $pass = config('database.connections.pgsql.password');
+        $conn = config('database.connections.pgsql');
 
-        // FIX: same full-escaping treatment as create()
-        $result = Process::env(['PGPASSWORD' => $pass])->run(
-            'psql -h ' . escapeshellarg($host) .
-            ' -p ' . escapeshellarg($port) .
-            ' -U ' . escapeshellarg($user) .
-            ' -d ' . escapeshellarg($db) .
-            ' -f ' . escapeshellarg($tempPath)
-        );
+        $result = Process::timeout(600)
+            ->env(['PGPASSWORD' => (string) ($conn['password'] ?? '')])
+            ->run([
+                config('database.pg_tools.psql'),
+                '-h', (string) $conn['host'],
+                '-p', (string) $conn['port'],
+                '-U', (string) $conn['username'],
+                '-d', (string) $conn['database'],
+                '-v', 'ON_ERROR_STOP=1',
+                '-f', $tempPath,
+            ]);
 
         if ($result->failed()) {
+            $error = trim($result->errorOutput()) ?: 'Restore failed.';
+
             Backup::create([
                 'performed_by' => $request->user()->id,
                 'file_name' => $file->getClientOriginalName(),
                 'file_path' => '(restore - not stored)',
                 'type' => 'manual',
                 'status' => 'failed',
-                'error_message' => $result->errorOutput(),
+                'error_message' => $error,
             ]);
 
             return response()->json([
-                'message' => 'Failed to restore backup: ' . $result->errorOutput(),
+                'message' => 'Failed to restore backup: ' . $error,
             ], 500);
         }
 

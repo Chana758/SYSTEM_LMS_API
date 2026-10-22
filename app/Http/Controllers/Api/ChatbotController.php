@@ -9,8 +9,10 @@ use Illuminate\Http\Request;
 
 class ChatbotController extends Controller
 {
+    /** Inject the AI service that answers chatbot questions. */
     public function __construct(private ChatbotAiService $ai) {}
 
+    /** List the logged-in user's chat history, newest first. */
     public function index(Request $request)
     {
         $history = ChatHistory::where('user_id', $request->user()->id)
@@ -20,6 +22,7 @@ class ChatbotController extends Controller
         return response()->json($history);
     }
 
+    /** Send a message to the AI, save the reply to history, and return it. */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -38,6 +41,7 @@ class ChatbotController extends Controller
         return response()->json(['data' => $chat], 201);
     }
 
+    /** Delete all of the logged-in user's chat history. */
     public function clear(Request $request)
     {
         ChatHistory::where('user_id', $request->user()->id)->delete();

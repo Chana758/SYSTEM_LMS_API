@@ -12,14 +12,7 @@ class RemoteScanController extends Controller
 {
     private const SESSION_TTL_MINUTES = 15;
 
-    /**
-     * POST /remote-scan/session (auth:sanctum)
-     * Called by the already-logged-in staff member on the Scanner page
-     * (desktop) when they switch to the "Use Phone" tab. Ties the
-     * session to their own user id so submitScan() below can confirm
-     * the phone scanning is happening on behalf of the same account —
-     * unlike remote-login, where nobody is authenticated yet.
-     */
+    /** Create a phone-scan session tied to the logged-in staff user. */
     public function createSession(Request $request)
     {
         $sessionId = (string) Str::uuid();
@@ -36,25 +29,13 @@ class RemoteScanController extends Controller
         ]);
     }
 
-    /**
-     * GET /remote-scan/{sessionId}/status (public, throttled)
-     * Called by the phone page to confirm the pairing session (created
-     * by the desktop) is still valid before showing the camera.
-     */
+    /** Check that a phone-scan session is still valid. */
     public function status(string $sessionId)
     {
         return response()->json(['valid' => Cache::has("remote-scan-session:{$sessionId}")]);
     }
 
-    /**
-     * POST /remote-scan/{sessionId}/submit (public, throttled)
-     * Called by the phone every time it detects a barcode. Unlike
-     * remote-login's submitScan() (which is one-shot — a QR login token
-     * consumes the session), this endpoint intentionally does NOT
-     * forget the cache key: a stocktake/borrow session on the desktop
-     * expects the phone to keep scanning multiple barcodes back-to-back
-     * for up to SESSION_TTL_MINUTES, not just once.
-     */
+    /** Send a scanned barcode to the desktop; the session stays open for more scans. */
     public function submitScan(Request $request, string $sessionId)
     {
         $validated = $request->validate(['barcode' => ['required', 'string', 'max:255']]);

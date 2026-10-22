@@ -57,6 +57,9 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // URL of the Vue frontend. Used to build password-reset links.
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
+
     'asset_url' => env('ASSET_URL'),
 
     /*

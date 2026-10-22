@@ -8,23 +8,27 @@ use App\Models\Category;
 
 class CategoryController extends Controller
 {
+    /** List all categories with their book counts, sorted by name. */
     public function index()
     {
         return response()->json(Category::withCount('books')->orderBy('name')->get());
     }
 
+    /** Create a new category. */
     public function store(CategoryRequest $request)
     {
         $category = Category::create($request->validated());
         return response()->json(['message' => 'Category created.', 'category' => $category], 201);
     }
 
+    /** Update an existing category. */
     public function update(CategoryRequest $request, Category $category)
     {
         $category->update($request->validated());
         return response()->json(['message' => 'Category updated.', 'category' => $category]);
     }
 
+    /** Delete a category unless it still has books. */
     public function destroy(Category $category)
     {
         if ($category->books()->exists()) {

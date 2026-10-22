@@ -9,13 +9,12 @@ class MembershipTypeRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // gated by role:admin middleware in api.php
+        return true; 
     }
 
     public function rules(): array
     {
-        // code is locked/disabled on edit in MembershipTypesPage.vue,
-        // but still validate it defensively on both create and update.
+
         $typeId = $this->route('membershipType')?->id;
 
         return [
@@ -29,6 +28,11 @@ class MembershipTypeRequest extends FormRequest
             'label' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:500'],
             'is_active' => ['nullable', 'boolean'],
+            'loan_days'    => ['required', 'integer', 'min:1', 'max:365'],
+            'max_books'    => ['required', 'integer', 'min:1', 'max:50'],
+            'max_renewals' => ['required', 'integer', 'min:0', 'max:10'],
+            'renew_days'   => ['required', 'integer', 'min:1', 'max:90'],
+            'fine_per_day' => ['required', 'integer', 'min:0', 'max:100000'],
         ];
     }
 

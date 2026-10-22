@@ -13,20 +13,7 @@ class RemoteLoginController extends Controller
     private const SESSION_TTL_MINUTES = 5;
     private const MAX_PIN_ATTEMPTS = 3;
 
-    /**
-     * POST /remote-login/session (public)
-     * Called by the desktop Login page when the "Use Phone" tab opens.
-     *
-     * 🆕 Generates a random 6-digit PIN alongside the session id. The
-     * PIN is returned ONLY in this response — it is shown on the
-     * desktop screen, never encoded into the QR code itself. The
-     * phone must submit this PIN together with the scanned card's
-     * token before a login is accepted, so merely seeing or
-     * photographing the pairing QR (screenshot, video call, glance
-     * over a shoulder, etc.) is not enough on its own to complete a
-     * login on someone else's behalf — the attacker would also need
-     * to know the PIN currently displayed on that specific laptop.
-     */
+    /** Create a pairing session with a 6-digit PIN that is shown only on the desktop screen. */
     public function createSession()
     {
         $sessionId = (string) Str::uuid();
@@ -45,31 +32,13 @@ class RemoteLoginController extends Controller
         ]);
     }
 
-    /**
-     * GET /remote-login/{sessionId}/status (public, throttled)
-     * Called by the phone page to confirm the pairing session is
-     * still valid before showing the camera. Intentionally does NOT
-     * reveal the PIN — the phone user must read it off the laptop
-     * screen themselves.
-     */
+    /** Check that a pairing session is still valid (never reveals the PIN). */
     public function status(string $sessionId)
     {
         return response()->json(['valid' => Cache::has("remote-login-session:{$sessionId}")]);
     }
 
-    /**
-     * POST /remote-login/{sessionId}/submit (public, throttled)
-     * Called by the phone once it has scanned the library QR card AND
-     * the user has typed in the PIN currently shown on the laptop.
-     *
-     *  Now requires `pin` in addition to `qr_token`. Wrong PIN does
-     * NOT consume the session immediately — it decrements a limited
-     * number of attempts (MAX_PIN_ATTEMPTS) so a mistyped PIN doesn't
-     * force the user to refresh the QR and start over. Once attempts
-     * run out, the session is destroyed outright and a fresh QR/PIN
-     * pair is required — this bounds how many PINs someone can brute
-     * force against a single session.
-     */
+    /** Verify the PIN (max 3 attempts), then send the scanned QR token to the desktop. */
     public function submitScan(Request $request, string $sessionId)
     {
         $validated = $request->validate([

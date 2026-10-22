@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
-
+use App\Models\MembershipType;
 class Member extends Model
 {
     use HasFactory, SoftDeletes;
@@ -42,20 +42,11 @@ class Member extends Model
         return $this->hasMany(Reservation::class);
     }
 
-    /**
-     * NEW — needed by ReportController@user for per-member borrow
-     * counts (total_borrows / active_borrows).
-     */
     public function borrows(): HasMany
     {
         return $this->hasMany(BorrowTransaction::class, 'member_id');
     }
 
-    /**
-     * NEW — Fine has no member_id/user_id of its own; it only reaches
-     * a member through borrow_id. hasManyThrough bridges that gap so
-     * ReportController@user can do withSum('fines', 'amount') directly.
-     */
     public function fines(): HasManyThrough
     {
         return $this->hasManyThrough(
@@ -67,4 +58,18 @@ class Member extends Model
             'id'          // local key on borrow_transactions
         );
     }
+    
+    public function loanRules(): array
+{
+    $type = MembershipType::where('code', $this->membership_type)->first();
+    $d = MembershipType::defaults();
+
+    return [
+        'loan_days'    => $type?->loan_days    ?? $d['loan_days'],
+        'max_books'    => $type?->max_books    ?? $d['max_books'],
+        'max_renewals' => $type?->max_renewals ?? $d['max_renewals'],
+        'renew_days'   => $type?->renew_days   ?? $d['renew_days'],
+        'fine_per_day' => $type?->fine_per_day ?? $d['fine_per_day'],
+    ];
+}
 }

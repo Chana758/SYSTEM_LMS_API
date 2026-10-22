@@ -9,18 +9,12 @@ use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 
 /**
- * Requires:
- *   composer require maatwebsite/excel barryvdh/laravel-dompdf
- *
- * CSV is written with native fputcsv, so it works even without those
- * packages installed — only 'excel' and 'pdf' formats need them.
+ * Requires: composer require maatwebsite/excel barryvdh/laravel-dompdf
+ * CSV uses native fputcsv, so only 'excel' and 'pdf' need those packages.
  */
 class ReportExportService
 {
-    /**
-     * @return string storage path (relative to the `public` disk) that
-     *                should be saved into reports.file_url
-     */
+    /** Export rows in the given format; returns the path (public disk) to save in reports.file_url. */
     public function export(string $type, string $format, Collection $rows, array $headings, string $dateSuffix): string
     {
         $filename = "reports/{$type}-{$dateSuffix}." . $this->extensionFor($format);
@@ -33,6 +27,7 @@ class ReportExportService
         };
     }
 
+    /** File extension for a format. */
     private function extensionFor(string $format): string
     {
         return match ($format) {
@@ -43,6 +38,7 @@ class ReportExportService
         };
     }
 
+    /** Write a CSV file to the public disk. */
     private function exportCsv(Collection $rows, array $headings, string $filename): string
     {
         $handle = fopen('php://temp', 'w+');
@@ -59,6 +55,7 @@ class ReportExportService
         return $filename;
     }
 
+    /** Write an Excel (.xlsx) file to the public disk. */
     private function exportExcel(Collection $rows, array $headings, string $filename, string $title): string
     {
         $export = new GenericReportExport($rows, $headings, ucfirst($title) . ' Report');
@@ -67,6 +64,7 @@ class ReportExportService
         return $filename;
     }
 
+    /** Write a landscape A4 PDF to the public disk. */
     private function exportPdf(string $type, Collection $rows, array $headings, string $filename): string
     {
         $pdf = Pdf::loadView('reports.export-pdf', [

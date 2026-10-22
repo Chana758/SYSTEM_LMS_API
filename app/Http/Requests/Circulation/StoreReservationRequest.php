@@ -4,42 +4,51 @@ namespace App\Http\Requests\Circulation;
 
 use App\Models\Member;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule; // <-- was missing: Rule::in() crashed with "Class Rule not found"
 
 class StoreReservationRequest extends FormRequest
 {
+    protected function isStaff(): bool
+    {
+        return in_array($this->user()?->role?->name, ['admin', 'librarian'], true);
+    }
+
     public function authorize(): bool
     {
         $user = $this->user();
-        $roleName = $user->role?->name;
 
-        if (in_array($roleName, ['admin', 'librarian'])) {
+        if (! $user) {
+            return false;
+        }
+
+        if ($this->isStaff()) {
             return true;
         }
 
-        if ($roleName === 'member') {
-            return Member::where('user_id', $user->id)->exists();
-        }
-
-        return false;
+        // A normal member needs a member profile.
+        return $user->role?->name === 'member'
+            && Member::where('user_id', $user->id)->exists();
     }
 
     public function rules(): array
     {
-        $isStaff = in_array($this->user()->role?->name, ['admin', 'librarian']);
+        $ownMemberId = Member::where('user_id', $this->user()?->id)->value('id');
 
         return [
-            'book_id' => ['required', 'exists:books,id'],
-            'member_id' => [$isStaff ? 'required' : 'nullable', 'exists:members,id'],
+            'book_id' => ['required', 'integer', 'exists:books,id'],
+
+            // Staff pick a member; a member can only reserve for themselves.
+            'member_id' => $this->isStaff()
+                ? ['required', 'integer', 'exists:members,id']
+                : ['nullable', 'integer', Rule::in([$ownMemberId])],
         ];
     }
 
-    public function messages(): array
+    public function attributes(): array
     {
         return [
-            'book_id.required' => __('validation.custom.reservation.book_id.required'),
-            'book_id.exists' => __('validation.custom.reservation.book_id.exists'),
-            'member_id.required' => __('validation.custom.reservation.member_id.required'),
-            'member_id.exists' => __('validation.custom.reservation.member_id.exists'),
+            'book_id'   => 'book',
+            'member_id' => 'member',
         ];
     }
 }

@@ -13,12 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
-    /**
-     * GET /dashboard
-     * Accessible by: admin, librarian
-     * Returns the summary stat cards + circulation overview + low-stock
-     * list shown at the top of DashboardPage.vue.
-     */
+    /** Return summary stats (books, members, borrows, fines) and the low-stock list. */
     public function index(Request $request)
     {
         return response()->json([
@@ -40,16 +35,7 @@ class DashboardController extends Controller
         ]);
     }
 
-    /**
-     * GET /dashboard/recent-activities
-     * Accessible by: admin, librarian
-     *
-     * Pulls the last N events across borrows, returns, reservations,
-     * fines, and new member sign-ups, merges them into one feed sorted
-     * by recency, and normalizes each into the
-     * { id, type, description, created_at } shape RecentActivities.vue
-     * expects.
-     */
+    /** Return a merged, newest-first feed of borrows, returns, reservations, fines and new members. */
     public function recentActivities(Request $request)
     {
         $limit = (int) $request->get('limit', 10);
@@ -123,24 +109,12 @@ class DashboardController extends Controller
         return response()->json($merged);
     }
 
-    /**
-     * GET /dashboard/revenue-chart
-     * Accessible by: admin, librarian
-     *
-     * Returns fine payments collected, grouped by month, for the last
-     * 6 months (including months with $0 so the x-axis stays
-     * contiguous), in the { month: 'Jan', total: 123.45 } shape
-     * RevenueChart.vue expects.
-     *
-     * NOTE: to_char() is PostgreSQL syntax, matching this project's
-     * pgsql connection (seen elsewhere, e.g. ScanController's use of
-     * ilike). If this project ever moves to MySQL, swap this for
-     * DATE_FORMAT(paid_at, '%Y-%m').
-     */
+    /** Return fine payments per month for the last 6 months (months with no payments show 0). */
     public function revenueChart(Request $request)
     {
         $months = collect(range(5, 0))->map(fn ($i) => now()->subMonths($i));
 
+        // NOTE: to_char() is PostgreSQL-only. On MySQL use DATE_FORMAT(paid_at, '%Y-%m').
         $paid = Fine::where('status', 'paid')
             ->whereNotNull('paid_at')
             ->where('paid_at', '>=', now()->subMonths(6)->startOfMonth())

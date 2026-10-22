@@ -8,13 +8,13 @@ class UpdateSettingRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // gated by role:admin middleware in api.php
+        return true; // admin-only check is done in the controller
     }
 
     public function rules(): array
     {
         return [
-            // SystemSettings.vue only ever PATCHes the `value` field per row
+            // SystemSettings.vue only edits the `value` field (empty is allowed)
             'value' => ['nullable', 'string'],
         ];
     }

@@ -9,13 +9,7 @@ use Illuminate\Http\Request;
 
 class MembershipTypeController extends Controller
 {
-    /**
-     * GET /membership-types
-     * Any authenticated user — used by MemberForm.vue's dropdown.
-     * ?active_only=1 restricts to types visible in Create/Edit forms;
-     * without it, the admin management page sees everything (including
-     * disabled types, so it can re-enable them).
-     */
+    /** List membership types; with ?active_only=1 return only active ones. */
     public function index(Request $request)
     {
         $query = MembershipType::query();
@@ -27,10 +21,7 @@ class MembershipTypeController extends Controller
         return response()->json($query->orderBy('label')->get());
     }
 
-    /**
-     * POST /membership-types
-     * Admin only.
-     */
+    /** Create a membership type with a unique code. */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -47,13 +38,7 @@ class MembershipTypeController extends Controller
         ], 201);
     }
 
-    /**
-     * PUT /membership-types/{membershipType}
-     * Admin only. `code` is intentionally NOT updatable here — it's
-     * the value already stored on existing members.membership_type
-     * rows, so renaming it would silently orphan them. Only label,
-     * description, and active status can change.
-     */
+    /** Update label, description and active status (code is not changeable). */
     public function update(Request $request, MembershipType $membershipType)
     {
         $validated = $request->validate([
@@ -70,12 +55,7 @@ class MembershipTypeController extends Controller
         ]);
     }
 
-    /**
-     * DELETE /membership-types/{membershipType}
-     * Admin only. Blocks deletion if any member still uses this code,
-     * to avoid orphaning existing members' membership_type value —
-     * admin should deactivate instead in that case.
-     */
+    /** Delete a type unless members still use it (deactivate it instead). */
     public function destroy(MembershipType $membershipType)
     {
         $inUse = Member::where('membership_type', $membershipType->code)->exists();

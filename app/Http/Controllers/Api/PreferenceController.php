@@ -7,10 +7,7 @@ use Illuminate\Http\Request;
 
 class PreferenceController extends Controller
 {
-    /**
-     * GET /auth/profile/preferences
-     * Any authenticated user — returns own preferences (creates default row if none exists).
-     */
+    /** Return the logged-in user's preferences, creating a default row if none exists. */
     public function show(Request $request)
     {
         $preference = $request->user()->preference()->firstOrCreate([]);
@@ -18,10 +15,7 @@ class PreferenceController extends Controller
         return response()->json($preference);
     }
 
-    /**
-     * PUT /auth/profile/preferences
-     * Any authenticated user — updates own preferences only.
-     */
+    /** Update the logged-in user's own preferences (dark mode and notification settings). */
     public function update(Request $request)
     {
         $validated = $request->validate([

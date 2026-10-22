@@ -8,7 +8,7 @@ class StoreSettingRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true; // gated by role:admin middleware in api.php
+        return true; // admin-only check is done in the controller
     }
 
     public function rules(): array
@@ -25,11 +25,11 @@ class StoreSettingRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'key.required' => __('validation.custom.setting.key.required'),
-            'key.unique' => __('validation.custom.setting.key.unique'),
-            'key.regex' => __('validation.custom.setting.key.regex'),
-            'type.required' => __('validation.custom.setting.type.required'),
-            'type.in' => __('validation.custom.setting.type.in'),
+            'key.required' => 'The key is required.',
+            'key.unique' => 'This key already exists.',
+            'key.regex' => 'The key may only contain lowercase letters, numbers and underscores.',
+            'type.required' => 'The type is required.',
+            'type.in' => 'The type must be string, number, boolean or json.',
         ];
     }
 }

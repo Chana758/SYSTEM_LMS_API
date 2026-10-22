@@ -2,19 +2,21 @@
 
 namespace App\Console\Commands;
 
-use App\Http\Controllers\Api\ReservationController;
+use App\Services\ReservationService; // <-- expireOverdue() lives in the SERVICE, not the controller
 use Illuminate\Console\Command;
 
 class ExpireReservations extends Command
 {
-    // This signature is used to call the command via CLI and Scheduler
     protected $signature = 'reservations:expire';
-    protected $description = 'Expire reservations past their expire_date and promote next in queue';
 
-    public function handle(ReservationController $controller): int
+    protected $description = 'Expire reservations past their expire_date and promote the next member in the queue';
+
+    public function handle(ReservationService $reservations): int
     {
-        $count = $controller->expireOverdue();
+        $count = $reservations->expireOverdue();
+
         $this->info("Successfully processed {$count} expired reservation(s).");
-        return Command::SUCCESS;
+
+        return self::SUCCESS;
     }
 }

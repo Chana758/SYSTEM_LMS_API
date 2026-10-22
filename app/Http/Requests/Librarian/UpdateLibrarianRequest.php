@@ -7,24 +7,16 @@ use Illuminate\Validation\Rule;
 
 class UpdateLibrarianRequest extends FormRequest
 {
-    /**
-     * Authorization is already handled by the 'role:admin' middleware in api.php.
-     */
+    /** Authorization is handled by the 'role:admin' middleware in api.php. */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Validation rules for updating an existing Librarian.
-     * Mirrors LibrarianForm.vue's isEdit=true field set — no
-     * password/password_confirmation here (that flow is handled
-     * separately via QrLoginCardAdmin / staff-issued reissue, not
-     * this form).
-     */
+    /** Validation rules for updating a librarian (no password fields here). */
     public function rules(): array
     {
-        // ignore the current librarian's own user_id in the unique email check
+        // Ignore the current librarian's own user_id in the unique email check
         $userId = $this->route('librarian')?->user_id;
 
         return [
@@ -39,6 +31,7 @@ class UpdateLibrarianRequest extends FormRequest
         ];
     }
 
+    /** Custom validation error messages. */
     public function messages(): array
     {
         return [

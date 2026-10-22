@@ -12,6 +12,7 @@ class RecommendationController extends Controller
 {
     private const LIMIT = 10;
 
+    /** Recommend books by reading history, or popular books if there is no history or member profile. */
     public function index(Request $request)
     {
         $user = $request->user();
@@ -81,6 +82,7 @@ class RecommendationController extends Controller
         ]);
     }
 
+    /** Record that the user clicked a recommended book. */
     public function markClicked(Request $request, Book $book)
     {
         Recommendation::updateOrCreate(

@@ -10,27 +10,39 @@ use Illuminate\Support\Facades\Hash;
 class AdminSeeder extends Seeder
 {
     /**
-     * Run the database seeds.
      * Creates the 3 base roles (admin, librarian, member)
-     * and one default Admin account.
+     * and the default Admin accounts. Safe to run multiple times.
      */
     public function run(): void
     {
-        // Create all base roles first (safe to run multiple times — firstOrCreate)
         $adminRole = Role::firstOrCreate(['name' => 'admin']);
         Role::firstOrCreate(['name' => 'librarian']);
         Role::firstOrCreate(['name' => 'member']);
 
-        // Create the default Admin account (only if it doesn't exist yet)
-        User::firstOrCreate(
-            ['email' => 'csam26176@gmail.com'],
+        $admins = [
             [
-                'name' => 'Sam Channa',
-                'password' => Hash::make('125476'), 
-                'role_id' => $adminRole->id,
-                'status' => 'active',
-                'language_preference' => 'km',
-            ]
-        );
+                'name'     => 'Sam Channa',
+                'email'    => 'csam26176@gmail.com',
+                'password' => '125476',
+            ],
+            [
+                'name'     => 'Channa',
+                'email'    => 'channa1254@gmail.com',
+                'password' => '27159364',
+            ],
+        ];
+
+        foreach ($admins as $admin) {
+            User::firstOrCreate(
+                ['email' => $admin['email']],
+                [
+                    'name'                => $admin['name'],
+                    'password'            => Hash::make($admin['password']),
+                    'role_id'             => $adminRole->id,
+                    'status'              => 'active',
+                    'language_preference' => 'km',
+                ]
+            );
+        }
     }
 }

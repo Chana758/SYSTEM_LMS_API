@@ -13,21 +13,20 @@ class ChatbotAiService
     private string $model;
     private $user;
 
-    /** Safety cap on the tool-calling loop below. */
+    /** Safety cap on the tool-calling loop. */
     private const MAX_TOOL_ROUNDS = 5;
 
-    /** Keep responses short and cheap; raise if you want longer answers. */
+    /** Keep responses short and cheap; raise for longer answers. */
     private const MAX_TOKENS = 600;
 
     public function __construct()
     {
-        // Groq's API is OpenAI-compatible, so this is the only place
-        // that changed compared to the OpenAI version: different config
-        // keys and a model that Groq actually hosts.
+        // Groq's API is OpenAI-compatible
         $this->apiKey = config('services.groq.key');
         $this->model = config('services.groq.model', 'openai/gpt-oss-120b');
     }
 
+    /** Send the user's message to the AI, run any requested tools, and return the reply. */
     public function ask(string $userMessage, $user): string
     {
         $this->user = $user;
@@ -46,12 +45,14 @@ class ChatbotAiService
                 return 'សូមទោស មានបញ្ហាបច្ចេកទេសកើតឡើង។ សូមសាកល្បងម្តងទៀត។';
             }
 
+            // No tool requested: this is the final answer
             if (empty($choice['tool_calls'])) {
                 return trim($choice['content'] ?? 'សូមទោស ខ្ញុំមិនអាចឆ្លើយបានពេលនេះទេ។');
             }
 
             $messages[] = $choice;
 
+            // Run each requested tool and feed the result back to the AI
             foreach ($choice['tool_calls'] as $toolCall) {
                 $result = $this->executeTool(
                     $toolCall['function']['name'],
@@ -69,6 +70,7 @@ class ChatbotAiService
         return 'សូមទោស សំណួរនេះស្មុគស្មាញពេក។ សូមសាកល្បងសួរម្តងទៀតតាមរបៀបផ្សេង។';
     }
 
+    /** Instructions that define the assistant's language, format and data rules. */
     private function systemPrompt(): string
     {
         return <<<PROMPT
@@ -91,6 +93,7 @@ class ChatbotAiService
 PROMPT;
     }
 
+    /** Tool definitions the AI can call. */
     private function tools(): array
     {
         return [
@@ -127,6 +130,7 @@ PROMPT;
         ];
     }
 
+    /** Route a tool call to its handler. */
     private function executeTool(string $name, array $args): mixed
     {
         return match ($name) {
@@ -137,6 +141,7 @@ PROMPT;
         };
     }
 
+    /** Tool: the user's borrowed books and due dates. */
     private function toolGetDueDates(): array
     {
         $member = $this->user->member;
@@ -162,6 +167,7 @@ PROMPT;
         ];
     }
 
+    /** Tool: the user's total unpaid fines (KHR). */
     private function toolGetFines(): array
     {
         $member = $this->user->member;
@@ -174,6 +180,7 @@ PROMPT;
         return ['unpaid_total' => round($unpaid, 0), 'currency' => 'KHR'];
     }
 
+    /** Tool: search books by title or author (max 5 results). */
     private function toolSearchBooks(string $keyword): array
     {
         if (trim($keyword) === '') {
@@ -188,10 +195,9 @@ PROMPT;
         return ['results' => $books];
     }
 
+    /** Call Groq's chat-completions endpoint (OpenAI-compatible, with tool calling). */
     private function callOpenAi(array $messages): array
     {
-        // Only the host changed vs. the OpenAI version — Groq speaks the
-        // same chat-completions + tool-calling JSON shape.
         $response = Http::withToken($this->apiKey)
             ->timeout(20)
             ->post('https://api.groq.com/openai/v1/chat/completions', [
