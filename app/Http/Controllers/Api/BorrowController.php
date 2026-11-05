@@ -216,7 +216,7 @@ class BorrowController extends Controller
             if ($copyStatus === 'available') {
                 $borrow->bookCopy->book()->increment('available_qty');
 
-                app(ReservationController::class)
+                app(\App\Services\ReservationService::class)
                     ->promoteNextInQueue($borrow->bookCopy->book_id);
             }
 
