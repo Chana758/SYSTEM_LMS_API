@@ -2,27 +2,31 @@
 
 namespace App\Providers;
 
+use Illuminate\Console\Events\CommandStarting;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Auth\Notifications\ResetPassword;
+
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
-{
-    ResetPassword::createUrlUsing(function ($user, string $token) {
-        $frontend = rtrim(config('app.frontend_url'), '/');
-
-        return $frontend . '/reset-password/' . $token . '?email=' . urlencode($user->getEmailForPasswordReset());
-    });
-}
+    {
+        // Refuse destructive artisan commands unless the DB name contains "demo" or "test".
+        Event::listen(CommandStarting::class, function (CommandStarting $e) {
+            $destructive = ['migrate:fresh', 'migrate:refresh', 'migrate:reset', 'db:wipe'];
+            if (! in_array($e->command, $destructive, true)) {
+                return;
+            }
+            $conn = config('database.default');
+            $db = strtolower((string) config("database.connections.{$conn}.database"));
+            if (! str_contains($db, 'demo') && ! str_contains($db, 'test')) {
+                fwrite(STDERR, "BLOCKED: '{$e->command}' refused on database '{$db}' (name must contain 'demo' or 'test').\n");
+                exit(1);
+            }
+        });
+    }
 }
