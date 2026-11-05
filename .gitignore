@@ -21,3 +21,13 @@ yarn-error.log
 # macOS
 .DS_Store
 **/.DS_Store
+
+# Environment files (keep only the examples)
+.env.*
+!.env.example
+!.env.demo.example
+
+# Environment files (keep only the examples)
+.env.*
+!.env.example
+!.env.demo.example
