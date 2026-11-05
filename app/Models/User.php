@@ -26,6 +26,7 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'qr_login_token_expires_at' => 'datetime',
+        'is_demo' => 'boolean',
     ];
 
     // Always include has_qr_card in serialized output (the token itself stays hidden)
