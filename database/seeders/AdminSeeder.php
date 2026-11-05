@@ -9,40 +9,30 @@ use Illuminate\Support\Facades\Hash;
 
 class AdminSeeder extends Seeder
 {
-    /**
-     * Creates the 3 base roles (admin, librarian, member)
-     * and the default Admin accounts. Safe to run multiple times.
-     */
+    /** Creates base roles and one admin from env vars. Safe to run repeatedly. */
     public function run(): void
     {
         $adminRole = Role::firstOrCreate(['name' => 'admin']);
         Role::firstOrCreate(['name' => 'librarian']);
         Role::firstOrCreate(['name' => 'member']);
 
-        $admins = [
-            [
-                'name'     => 'Sam Channa',
-                'email'    => 'csam26176@gmail.com',
-                'password' => '125476',
-            ],
-            [
-                'name'     => 'Channa',
-                'email'    => 'channa1254@gmail.com',
-                'password' => '27159364',
-            ],
-        ];
+        $email = env('ADMIN_EMAIL');
+        $password = env('ADMIN_PASSWORD');
 
-        foreach ($admins as $admin) {
-            User::firstOrCreate(
-                ['email' => $admin['email']],
-                [
-                    'name'                => $admin['name'],
-                    'password'            => Hash::make($admin['password']),
-                    'role_id'             => $adminRole->id,
-                    'status'              => 'active',
-                    'language_preference' => 'km',
-                ]
-            );
+        if (! $email || ! $password) {
+            $this->command?->warn('ADMIN_EMAIL / ADMIN_PASSWORD not set; skipping admin creation.');
+            return;
         }
+
+        User::firstOrCreate(
+            ['email' => $email],
+            [
+                'name'                => env('ADMIN_NAME', 'Administrator'),
+                'password'            => Hash::make($password),
+                'role_id'             => $adminRole->id,
+                'status'              => 'active',
+                'language_preference' => 'km',
+            ]
+        );
     }
 }
