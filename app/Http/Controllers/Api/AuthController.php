@@ -258,7 +258,8 @@ class AuthController extends Controller
     {
         $status = Password::sendResetLink($request->only('email'));
 
-        if (in_array($status, [Password::RESET_LINK_SENT, Password::INVALID_USER], true)) {
+        // RESET_THROTTLED is included too: a different answer would reveal that the email exists.
+        if (in_array($status, [Password::RESET_LINK_SENT, Password::INVALID_USER, Password::RESET_THROTTLED], true)) {
             return response()->json([
                 'message' => 'If an account exists for that email, a password reset link has been sent.',
             ], 200);
