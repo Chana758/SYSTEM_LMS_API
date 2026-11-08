@@ -38,8 +38,8 @@ class Reservation extends Model
 ];
 
 protected $casts = [
-    'reserved_date' => 'date',
-    'expire_date'   => 'date',
+    'reserved_date' => 'date:Y-m-d',
+    'expire_date'   => 'date:Y-m-d',
     'ready_at'      => 'datetime',
     'fulfilled_at'  => 'datetime',
     'cancelled_at'  => 'datetime',

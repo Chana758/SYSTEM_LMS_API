@@ -26,9 +26,9 @@ class BorrowTransaction extends Model
     ];
 
     protected $casts = [
-        'borrow_date'   => 'date',
-        'due_date'      => 'date',
-        'return_date'   => 'date',
+        'borrow_date'   => 'date:Y-m-d',
+        'due_date'      => 'date:Y-m-d',
+        'return_date'   => 'date:Y-m-d',
         'renewed_count' => 'integer',
     ];
 

@@ -29,8 +29,8 @@ class Report extends Model
     ];
 
     protected $casts = [
-        'date_from' => 'date',
-        'date_to'   => 'date',
+        'date_from' => 'date:Y-m-d',
+        'date_to'   => 'date:Y-m-d',
     ];
 
     public function generatedBy()

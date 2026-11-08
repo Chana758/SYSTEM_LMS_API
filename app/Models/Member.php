@@ -28,8 +28,8 @@ class Member extends Model
     ];
 
     protected $casts = [
-        'join_date'   => 'date',
-        'expiry_date' => 'date',
+        'join_date'   => 'date:Y-m-d',
+        'expiry_date' => 'date:Y-m-d',
     ];
 
     public function user(): BelongsTo
