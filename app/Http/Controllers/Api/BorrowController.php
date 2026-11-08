@@ -202,7 +202,9 @@ class BorrowController extends Controller
         }
 
         return DB::transaction(function () use ($request, $borrow) {
-            $daysLate = max(0, Carbon::parse($borrow->due_date)->diffInDays(now(), false));
+            // Whole calendar days late. Compare dates (startOfDay) and cast to int:
+            // Carbon 3 (Laravel 12+) returns a float here, e.g. 2.37 days -> wrong fine amount.
+            $daysLate = max(0, (int) Carbon::parse($borrow->due_date)->startOfDay()->diffInDays(now()->startOfDay(), false));
             $condition = $request->input('condition', 'good');
 
             $borrow->update([
