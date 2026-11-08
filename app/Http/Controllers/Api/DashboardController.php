@@ -35,66 +35,86 @@ class DashboardController extends Controller
         ]);
     }
 
-    /** Return a merged, newest-first feed of borrows, returns, reservations, fines and new members. */
+    /**
+     * Return a merged, newest-first feed of borrows, returns, reservations, fines and new members.
+     *
+     * Each item carries structured fields (actor, book, amount) so the frontend can build the
+     * sentence in the user's language. `description` is kept as an English fallback.
+     */
     public function recentActivities(Request $request)
     {
-        $limit = (int) $request->get('limit', 10);
+        $limit = min(max((int) $request->get('limit', 10), 1), 50);
 
         $borrows = BorrowTransaction::with(['member.user:id,name', 'bookCopy.book:id,title'])
             ->latest('borrow_date')
             ->limit($limit)
             ->get()
-            ->map(fn ($b) => [
-                'id' => 'borrow-' . $b->id,
-                'type' => 'borrow',
-                'description' => ($b->member?->user?->name ?? 'A member') . ' borrowed "' . ($b->bookCopy?->book?->title ?? 'a book') . '"',
-                'created_at' => $b->created_at,
-            ]);
+            ->map(fn ($b) => $this->activity(
+                'borrow-' . $b->id,
+                'borrow',
+                $b->member?->user?->name,
+                $b->bookCopy?->book?->title,
+                null,
+                $b->created_at,
+                ($b->member?->user?->name ?? 'A member') . ' borrowed "' . ($b->bookCopy?->book?->title ?? 'a book') . '"',
+            ));
 
         $returns = BorrowTransaction::with(['member.user:id,name', 'bookCopy.book:id,title'])
             ->whereNotNull('return_date')
             ->latest('return_date')
             ->limit($limit)
             ->get()
-            ->map(fn ($b) => [
-                'id' => 'return-' . $b->id,
-                'type' => 'return',
-                'description' => ($b->member?->user?->name ?? 'A member') . ' returned "' . ($b->bookCopy?->book?->title ?? 'a book') . '"',
-                'created_at' => $b->updated_at,
-            ]);
+            ->map(fn ($b) => $this->activity(
+                'return-' . $b->id,
+                'return',
+                $b->member?->user?->name,
+                $b->bookCopy?->book?->title,
+                null,
+                $b->updated_at,
+                ($b->member?->user?->name ?? 'A member') . ' returned "' . ($b->bookCopy?->book?->title ?? 'a book') . '"',
+            ));
 
         $reservations = Reservation::with(['member.user:id,name', 'book:id,title'])
             ->latest()
             ->limit($limit)
             ->get()
-            ->map(fn ($r) => [
-                'id' => 'reservation-' . $r->id,
-                'type' => 'reservation',
-                'description' => ($r->member?->user?->name ?? 'A member') . ' reserved "' . ($r->book?->title ?? 'a book') . '"',
-                'created_at' => $r->created_at,
-            ]);
+            ->map(fn ($r) => $this->activity(
+                'reservation-' . $r->id,
+                'reservation',
+                $r->member?->user?->name,
+                $r->book?->title,
+                null,
+                $r->created_at,
+                ($r->member?->user?->name ?? 'A member') . ' reserved "' . ($r->book?->title ?? 'a book') . '"',
+            ));
 
         $fines = Fine::with(['borrow.member.user:id,name'])
             ->latest()
             ->limit($limit)
             ->get()
-            ->map(fn ($f) => [
-                'id' => 'fine-' . $f->id,
-                'type' => 'fine',
-                'description' => 'Fine of $' . number_format($f->amount, 2) . ' issued to ' . ($f->borrow?->member?->user?->name ?? 'a member'),
-                'created_at' => $f->created_at,
-            ]);
+            ->map(fn ($f) => $this->activity(
+                'fine-' . $f->id,
+                'fine',
+                $f->borrow?->member?->user?->name,
+                null,
+                (float) $f->amount,
+                $f->created_at,
+                'Fine of $' . number_format((float) $f->amount, 2) . ' issued to ' . ($f->borrow?->member?->user?->name ?? 'a member'),
+            ));
 
         $newMembers = Member::with('user:id,name')
             ->latest()
             ->limit($limit)
             ->get()
-            ->map(fn ($m) => [
-                'id' => 'member-' . $m->id,
-                'type' => 'member',
-                'description' => ($m->user?->name ?? 'A new member') . ' joined the library',
-                'created_at' => $m->created_at,
-            ]);
+            ->map(fn ($m) => $this->activity(
+                'member-' . $m->id,
+                'member',
+                $m->user?->name,
+                null,
+                null,
+                $m->created_at,
+                ($m->user?->name ?? 'A new member') . ' joined the library',
+            ));
 
         $merged = collect()
             ->concat($borrows)
@@ -107,6 +127,27 @@ class DashboardController extends Controller
             ->values();
 
         return response()->json($merged);
+    }
+
+    /** Build one activity-feed item. */
+    private function activity(
+        string $id,
+        string $type,
+        ?string $actor,
+        ?string $book,
+        ?float $amount,
+        $createdAt,
+        string $description,
+    ): array {
+        return [
+            'id'          => $id,
+            'type'        => $type,
+            'actor'       => $actor,
+            'book'        => $book,
+            'amount'      => $amount,
+            'description' => $description,
+            'created_at'  => $createdAt,
+        ];
     }
 
     /** Return fine payments per month for the last 6 months (months with no payments show 0). */
@@ -125,7 +166,8 @@ class DashboardController extends Controller
         $result = $months->map(function ($date) use ($paid) {
             $key = $date->format('Y-m');
             return [
-                'month' => $date->format('M'),
+                'ym'    => $key,                 // e.g. "2026-11" — lets the frontend localise the month name
+                'month' => $date->format('M'),   // English fallback for older clients
                 'total' => (float) ($paid[$key] ?? 0),
             ];
         });

@@ -23,9 +23,10 @@ Route::get('branding', [SettingController::class, 'branding']);
 
 // 1. AUTH
 Route::prefix('auth')->group(function () {
-    Route::post('register', [AuthController::class, 'register']);
-    Route::post('login', [AuthController::class, 'login']);
-    Route::post('login/qr', [AuthController::class, 'loginWithQr']);
+    // Throttled per IP to stop password guessing (brute force): N attempts per minute.
+    Route::post('register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+    Route::post('login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    Route::post('login/qr', [AuthController::class, 'loginWithQr'])->middleware('throttle:10,1');
 
     // Forgot / reset password (frontend calls /auth/forgot-password and /auth/reset-password)
     Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');

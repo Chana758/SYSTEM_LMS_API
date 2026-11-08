@@ -114,7 +114,7 @@ class ReportController extends Controller
             );
 
             $data = [
-                'range'  => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
+                'range'  => $this->rangePayload($from, $to),
                 'kpis'   => $kpis,
                 'trends' => $trends,
                 'sparks' => $sparks,
@@ -190,7 +190,10 @@ class ReportController extends Controller
                 ->latest('borrow_date')
                 ->paginate($request->per_page ?? 15);
 
-            return response()->json(['status' => 'success', 'summary' => $summary, 'trend' => $trend, 'data' => $rows], 200);
+            return response()->json([
+                'status' => 'success', 'range' => $this->rangePayload($from, $to),
+                'summary' => $summary, 'trend' => $trend, 'data' => $rows,
+            ], 200);
 
         } catch (\Throwable $th) {
             Log::error('ReportController@borrow: ' . $th->getMessage());
@@ -236,7 +239,8 @@ class ReportController extends Controller
                 ->paginate($request->per_page ?? 15);
 
             return response()->json([
-                'status' => 'success', 'summary' => $summary, 'top_debtors' => $topDebtors, 'data' => $rows,
+                'status' => 'success', 'range' => $this->rangePayload($from, $to),
+                'summary' => $summary, 'top_debtors' => $topDebtors, 'data' => $rows,
             ], 200);
 
         } catch (\Throwable $th) {
@@ -262,8 +266,8 @@ class ReportController extends Controller
                 ])
                 ->withSum(['fines as total_fines' => fn ($q) => $q->whereBetween('fines.created_at', [$from, $to])], 'amount')
                 ->when($request->search, fn ($q) => $q->whereHas('user', function ($qq) use ($request) {
-                    $qq->where('name', 'like', "%{$request->search}%")
-                       ->orWhere('email', 'like', "%{$request->search}%");
+                    $qq->where('name', 'ilike', "%{$request->search}%")
+                       ->orWhere('email', 'ilike', "%{$request->search}%");
                 }))
                 ->when($request->role, fn ($q) => $q->whereHas('user.role', fn ($qq) => $qq->where('name', $request->role)))
                 ->orderByDesc('total_borrows');
@@ -294,7 +298,8 @@ class ReportController extends Controller
             );
 
             return response()->json([
-                'status' => 'success', 'summary' => $summary, 'trend' => $trend,
+                'status' => 'success', 'range' => $this->rangePayload($from, $to),
+                'summary' => $summary, 'trend' => $trend,
                 'top_borrowers' => $topBorrowers, 'data' => $rows,
             ], 200);
 
@@ -348,7 +353,10 @@ class ReportController extends Controller
                 'created_at'  => optional($f->paid_at)->format('Y-m-d'),
             ]);
 
-            return response()->json(['status' => 'success', 'summary' => $summary, 'trend' => $trend, 'data' => $rows], 200);
+            return response()->json([
+                'status' => 'success', 'range' => $this->rangePayload($from, $to),
+                'summary' => $summary, 'trend' => $trend, 'data' => $rows,
+            ], 200);
 
         } catch (\Throwable $th) {
             Log::error('ReportController@revenue: ' . $th->getMessage());
@@ -373,7 +381,7 @@ class ReportController extends Controller
                     'bookCopies as borrowed_copies'  => fn ($q) => $q->where('status', 'borrowed'),
                     'bookCopies as lost_copies'      => fn ($q) => $q->where('status', 'lost'),
                 ])
-                ->when($request->search, fn ($q) => $q->where('title', 'like', "%{$request->search}%"))
+                ->when($request->search, fn ($q) => $q->where('title', 'ilike', "%{$request->search}%"))
                 ->when($request->status, fn ($q) => $q->where('category_id', $request->status))
                 ->when($request->boolean('low_stock'), fn ($q) => $q->whereRaw($lowStockSql, ['available']))
                 ->when($request->boolean('dead_stock'), fn ($q) => $q->whereDoesntHave('borrows'))
@@ -540,6 +548,12 @@ class ReportController extends Controller
         return [$from, $to];
     }
 
+    /** The resolved date range as Y-m-d strings, returned so the UI can show the real period. */
+    private function rangePayload(Carbon $from, Carbon $to): array
+    {
+        return ['from' => $from->toDateString(), 'to' => $to->toDateString()];
+    }
+
     /** Same-length period right before the selected one (null for all_time). */
     private function previousRange(Request $request, Carbon $from, Carbon $to): ?array
     {
@@ -551,11 +565,15 @@ class ReportController extends Controller
         return [$from->copy()->subDays($days), $from->copy()->subSecond()];
     }
 
-    /** Percentage change from previous to current (100 if there was nothing before, 0 if nothing now). */
-    private function pct($current, $previous): int
+    /**
+     * Percentage change from previous to current.
+     * Returns null when the previous value is 0: "+100%" or "0%" against nothing is
+     * meaningless, and null makes the card hide its trend pill.
+     */
+    private function pct($current, $previous): ?int
     {
         if (!$previous) {
-            return $current > 0 ? 100 : 0;
+            return null;
         }
         return (int) round((($current - $previous) / $previous) * 100);
     }
