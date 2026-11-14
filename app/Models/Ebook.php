@@ -27,7 +27,7 @@ class Ebook extends Model
         'download_count'  => 'integer',
         'view_count'      => 'integer',
     ];
-
+    protected $hidden = ['file_url'];
     public function book()
     {
         return $this->belongsTo(Book::class);

@@ -167,24 +167,38 @@ class EbookController extends Controller
         $validated = $request->validate([
             'file'            => ['sometimes', 'file', 'mimes:pdf,epub,mobi', 'max:51200'],
             'format'          => ['sometimes', 'in:pdf,epub,mobi'],
-            'is_downloadable' => ['boolean'],
+            'is_downloadable' => ['sometimes', 'boolean'],
             'access_type'     => ['sometimes', 'in:public,member_only'],
         ]);
 
+        $oldFile = $ebook->file_url;
+        $newFile = null;
+
         if ($request->hasFile('file')) {
-            if ($ebook->file_url) {
-                Storage::disk('local')->delete($ebook->file_url);
+            $newFile = $request->file('file')->store('ebooks', 'local');
+
+            if (!$newFile) {
+                return response()->json([
+                    'message' => 'Failed to upload e-book file.',
+                ], 500);
             }
-            $validated['file_url']  = $request->file('file')->store('ebooks', 'local');
+
+            $validated['file_url'] = $newFile;
             $validated['file_size'] = $request->file('file')->getSize();
+
             unset($validated['file']);
         }
 
         $ebook->update($validated);
 
+        // Delete old file only after the database update succeeds.
+        if ($newFile && $oldFile && $oldFile !== $newFile) {
+            Storage::disk('local')->delete($oldFile);
+        }
+
         return response()->json([
             'message' => 'E-book updated successfully.',
-            'data'    => $ebook->fresh()->load('book.category'),
+            'data' => $ebook->fresh()->load('book.category'),
         ]);
     }
 
@@ -193,6 +207,8 @@ class EbookController extends Controller
     {
         $ebook->delete();
 
-        return response()->json(['message' => 'E-book removed successfully.']);
+        return response()->json([
+            'message' => 'E-book removed successfully.',
+        ]);
     }
 }
