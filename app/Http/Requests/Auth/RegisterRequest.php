@@ -28,7 +28,6 @@ class RegisterRequest extends FormRequest
             'email'             => ['required', 'email', 'max:255', 'unique:users,email'],
             'password'          => ['required', 'confirmed', 'min:8'],
             'phone'             => ['required', 'string', 'max:20'],
-            'membership_type'   => ['nullable', 'string', 'in:student,teacher,external'],
         ];
     }
 
@@ -50,7 +49,6 @@ class RegisterRequest extends FormRequest
             'password.confirmed' => __('validation.custom.password.confirmed'),
             'phone.required' => __('validation.custom.phone.required'),
             'phone.max' => __('validation.custom.phone.max'),
-            'membership_type.in' => __('validation.custom.membership_type.in'),
         ];
     }
 }

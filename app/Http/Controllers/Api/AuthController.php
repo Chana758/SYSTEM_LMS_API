@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
-use App\Http\Requests\Auth\QrLoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Models\Librarian;
@@ -48,7 +47,7 @@ class AuthController extends Controller
             Member::create([
                 'user_id'          => $user->id,
                 'membership_no'    => $this->generateMembershipNo(),
-                'membership_type'  => $validated['membership_type'] ?? 'student',
+                'membership_type'  => 'student', // staff change it after checking ID
                 'max_borrow_limit' => 3,
                 'join_date'        => now(),
                 'status'           => 'active',
@@ -76,27 +75,6 @@ class AuthController extends Controller
         }
 
         return $this->tokenResponse($user, 'Login successful', 'auth_token');
-    }
-
-    /** Log in by scanning a QR card; rejects unknown, expired, or inactive accounts. */
-    public function loginWithQr(QrLoginRequest $request)
-    {
-        $hashedToken = $this->hashQrToken($request->validated()['qr_token']);
-        $user = User::where('qr_login_token', $hashedToken)->first();
-
-        if (! $user) {
-            return response()->json(['message' => 'This QR code is invalid or no longer recognized.'], 401);
-        }
-
-        if (! $user->qr_login_token_expires_at || $user->qr_login_token_expires_at->isPast()) {
-            return response()->json(['message' => 'This QR code has expired. Please request a new one.'], 401);
-        }
-
-        if ($user->status !== 'active') {
-            return response()->json(['message' => 'Your account is not active (inactive/suspended)'], 403);
-        }
-
-        return $this->tokenResponse($user, 'Login successful', 'auth_token_qr');
     }
 
     /** Log out by deleting only the current access token. */
