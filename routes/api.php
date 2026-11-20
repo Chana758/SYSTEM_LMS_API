@@ -8,7 +8,8 @@ use App\Http\Controllers\Api\{
     LibrarianController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
     RecommendationController,
     ReportController,
-    ReservationController, ScanController, SettingController,BookCopyController,UserRoleController
+    ReservationController, ScanController, SettingController,BookCopyController,UserRoleController,
+    RemoteScanController
 };
 use Illuminate\Support\Facades\Route;
 
@@ -199,6 +200,20 @@ Route::middleware('auth:sanctum')->prefix('scan')->group(function () {
         Route::get('summary', [ScanController::class, 'summary']);
     });
 });
+
+// 6.6. REMOTE SCAN — use a phone as a barcode scanner for the laptop's Scanner page.
+// The laptop (staff, logged in) creates a session and shows it as a QR code.
+// The phone opens that link WITHOUT logging in: the random session id (UUID, 15 min)
+// is the permission. Each scan is pushed to the laptop over Reverb (WebSocket).
+Route::middleware(['auth:sanctum', 'role:admin,librarian'])
+    ->post('remote-scan/session', [RemoteScanController::class, 'createSession']);
+
+Route::middleware('throttle:60,1')->prefix('remote-scan/{sessionId}')
+    ->whereUuid('sessionId')
+    ->group(function () {
+        Route::get('status', [RemoteScanController::class, 'status']);
+        Route::post('submit', [RemoteScanController::class, 'submitScan']);
+    });
 
 // 7. SETTINGS & MISC
 Route::middleware('auth:sanctum')->prefix('settings')->group(function () {

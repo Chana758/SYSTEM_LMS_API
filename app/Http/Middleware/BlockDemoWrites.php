@@ -28,6 +28,8 @@ class BlockDemoWrites
         'PUT api/auth/profile/preferences',
         'POST api/notifications/mark-all-read',
         'POST api/notifications/{notification}/read',
+        // Only opens a 15-minute phone-scan session; it changes no data.
+        'POST api/remote-scan/session',
     ];
 
     /** Extra writes only for the demo librarian. */
