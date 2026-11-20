@@ -95,7 +95,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('role:admin,librarian')->prefix('borrows')->group(function () {
         Route::get('/', [BorrowController::class, 'index']);
-        Route::get('overdue', [BorrowController::class, 'overdue']);
         Route::post('/', [BorrowController::class, 'store']);
         Route::get('{borrow}', [BorrowController::class, 'show']);
         Route::post('{borrow}/return', [BorrowController::class, 'returnBook']);
@@ -184,7 +183,6 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('fines')->gr
     Route::get('summary', [FineController::class, 'summary']);
     Route::post('/', [FineController::class, 'store']);
     Route::get('{fine}', [FineController::class, 'show']);
-    Route::put('{fine}', [FineController::class, 'update']);
     Route::post('{fine}/pay', [FineController::class, 'pay']);
     Route::post('{fine}/waive', [FineController::class, 'waive']);
 });
@@ -226,7 +224,6 @@ Route::middleware('auth:sanctum')->prefix('settings')->group(function () {
         Route::post('branding', [SettingController::class, 'updateBranding']);
 
         Route::get('backup/create', [BackupController::class, 'create']);
-        Route::post('backup/restore', [BackupController::class, 'restore']);
 
         Route::post('/', [SettingController::class, 'store']);
         Route::put('{setting}', [SettingController::class, 'update']);
@@ -271,7 +268,6 @@ Route::middleware(['auth:sanctum'])
     ->prefix('admin/reports')
     ->group(function () {
         Route::middleware('role:admin,librarian')->group(function () {
-            Route::get('/dashboard', [ReportController::class, 'dashboard']);
             Route::get('/borrow',    [ReportController::class, 'borrow']);
             Route::get('/fine',      [ReportController::class, 'fine']);
             Route::get('/user',      [ReportController::class, 'user']);
@@ -280,7 +276,6 @@ Route::middleware(['auth:sanctum'])
         });
 
         Route::middleware('role:admin')->group(function () {
-            Route::get('/revenue',   [ReportController::class, 'revenue']);
             Route::post('/export',   [ReportController::class, 'export']);
             Route::delete('/{id}',   [ReportController::class, 'destroy']);
         });

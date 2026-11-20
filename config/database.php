@@ -93,7 +93,6 @@ return [
 
     'pg_tools' => [
         'dump' => env('PG_DUMP_PATH', 'pg_dump'),
-        'psql' => env('PSQL_PATH', 'psql'),
     ],
 
     /*

@@ -28,7 +28,10 @@ class BorrowController extends Controller
         $query = BorrowTransaction::with(['member.user', 'bookCopy.book.category', 'librarian.user', 'fines'])
             ->latest();
 
-        if ($request->filled('status')) {
+        if ($request->status === 'overdue') {
+            // still out and past the due date (the old Overdue page is now this filter)
+            $query->where('status', 'borrowed')->whereDate('due_date', '<', now()->toDateString());
+        } elseif ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
@@ -46,16 +49,6 @@ class BorrowController extends Controller
         if ($request->filled('to')) {
             $query->whereDate('borrow_date', '<=', $request->to);
         }
-
-        return response()->json($query->paginate($request->get('per_page', 15)));
-    }
-
-    public function overdue(Request $request)
-    {
-        $query = BorrowTransaction::with(['member.user', 'bookCopy.book.category'])
-            ->where('status', 'borrowed')
-            ->where('due_date', '<', now())
-            ->orderBy('due_date');
 
         return response()->json($query->paginate($request->get('per_page', 15)));
     }

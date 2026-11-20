@@ -72,31 +72,6 @@ class FineController extends Controller
         return response()->json($fine->load(['borrow.member.user', 'borrow.bookCopy.book']));
     }
 
-    /** Edit the amount, reason or notes of an unpaid fine. */
-    public function update(Request $request, Fine $fine)
-    {
-        if ($fine->status !== 'unpaid') {
-            return response()->json([
-                'message' => 'Only unpaid fines can be edited.',
-            ], 422);
-        }
-
-        $validated = $request->validate([
-            'amount' => ['required', 'numeric', 'min:0.01'],
-            'reason' => ['required', 'in:overdue,damaged,lost,other'],
-            'notes'  => ['nullable', 'string'],
-        ]);
-
-        $fine->update($validated);
-
-        $fine = $fine->fresh()->load('borrow.member.user', 'borrow.bookCopy.book');
-
-        return response()->json([
-            'message' => 'Fine updated successfully.',
-            'data' => $fine,
-        ]);
-    }
-
     /** Mark a fine as paid with a payment method and notify the member. */
     public function pay(Request $request, Fine $fine)
     {
