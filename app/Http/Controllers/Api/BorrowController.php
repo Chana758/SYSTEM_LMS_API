@@ -11,6 +11,7 @@ use App\Models\Librarian;
 use App\Models\Member;
 use App\Models\Notification;
 use App\Models\Reservation;
+use App\Services\LoanPolicy;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -64,10 +65,15 @@ class BorrowController extends Controller
         return response()->json($borrows);
     }
 
-    public function store(StoreBorrowRequest $request)
+    public function store(StoreBorrowRequest $request, LoanPolicy $policy)
     {
-        return DB::transaction(function () use ($request) {
-            $member = Member::findOrFail($request->member_id);
+        return DB::transaction(function () use ($request, $policy) {
+            $member = Member::lockForUpdate()->findOrFail($request->member_id);
+
+            // L1/A6: account, unpaid fines, max books (locked so two scans can't pass together)
+            if ($refusal = $policy->refusal($member)) {
+                return response()->json($refusal, 422);
+            }
 
             $alreadyBorrowed = BorrowTransaction::where('member_id', $member->id)
                 ->whereHas('bookCopy', fn ($q) => $q->where('book_id', $request->book_id))
@@ -78,10 +84,16 @@ class BorrowController extends Controller
                 return response()->json(['message' => 'This member has already borrowed this book.'], 422);
             }
 
+            // B4.3: the copy that was scanned, when given; otherwise any copy on the shelf
             $bookCopy = BookCopy::where('book_id', $request->book_id)
+                ->when($request->filled('book_copy_id'), fn ($q) => $q->whereKey($request->book_copy_id))
                 ->where('status', 'available')
                 ->lockForUpdate()
                 ->first();
+
+            if (! $bookCopy && $request->filled('book_copy_id')) {
+                return response()->json(['code' => 'COPY_NOT_AVAILABLE', 'message' => __('loan.COPY_NOT_AVAILABLE')], 422);
+            }
 
             if (!$bookCopy) {
                 return response()->json(['message' => 'This book is currently out of stock.'], 422);

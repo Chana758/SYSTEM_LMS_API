@@ -16,6 +16,7 @@ class StoreBorrowRequest extends FormRequest
         return [
             'member_id' => ['required', 'exists:members,id'],
             'book_id'   => ['required', 'exists:books,id'],
+            'book_copy_id' => ['nullable', 'integer', 'exists:book_copies,id'],
         ];
     }
 

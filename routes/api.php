@@ -10,7 +10,8 @@ use App\Http\Controllers\Api\{
     ReportController,
     ReservationController, ScanController, SettingController,BookCopyController,UserRoleController,
     RemoteScanController,
-    KioskController, DoorController, VisitController, KioskDeviceController, LoginLogController
+    KioskController, DoorController, VisitController, KioskDeviceController, LoginLogController,
+    ScanMemberController
 };
 use Illuminate\Support\Facades\Route;
 
@@ -246,6 +247,8 @@ Route::middleware('auth:sanctum')->prefix('scan')->group(function () {
     Route::post('/', [ScanController::class, 'store']);
 
     Route::middleware('role:admin,librarian')->group(function () {
+        // B4.3: member card at the desk
+        Route::post('member', [ScanMemberController::class, 'show'])->middleware('throttle:60,1');
         Route::get('history', [ScanController::class, 'index']);
         Route::get('summary', [ScanController::class, 'summary']);
     });
