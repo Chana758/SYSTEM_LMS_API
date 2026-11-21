@@ -16,7 +16,7 @@ class ReturnBookRequest extends FormRequest
         return [
             'condition' => ['required', 'string', 'in:good,damaged,lost'],
             // damage_fee / lost_fee arrive as raw Riel amounts from the
-            // frontend — CurrencyHelper::khrToUsd() converts server-side.
+            // frontend and are stored in Riel as they are (FIN1).
             'damage_fee' => ['required_if:condition,damaged', 'nullable', 'numeric', 'min:0'],
             'lost_fee' => ['required_if:condition,lost', 'nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:500'],

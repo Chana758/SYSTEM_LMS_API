@@ -11,7 +11,6 @@ use App\Models\Librarian;
 use App\Models\Member;
 use App\Models\Notification;
 use App\Models\Reservation;
-use App\Support\CurrencyHelper;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -220,7 +219,7 @@ class BorrowController extends Controller
             if ($daysLate > 0) {
                 $createdFines[] = Fine::create([
                     'borrow_id' => $borrow->id,
-                    'amount'    => CurrencyHelper::khrToUsd($daysLate * $this->finePerDay),
+                    'amount'    => $daysLate * $this->finePerDay,
                     'reason'    => 'overdue',
                     'status'    => 'unpaid',
                 ]);
@@ -229,7 +228,7 @@ class BorrowController extends Controller
             if ($condition === 'damaged') {
                 $createdFines[] = Fine::create([
                     'borrow_id' => $borrow->id,
-                    'amount'    => CurrencyHelper::khrToUsd($request->input('damage_fee', 5000)),
+                    'amount'    => (float) $request->input('damage_fee', 5000),
                     'reason'    => 'damaged',
                     'status'    => 'unpaid',
                     'notes'     => $request->input('notes'),
@@ -240,7 +239,7 @@ class BorrowController extends Controller
                 $lostFeeKhr = $request->input('lost_fee', $borrow->bookCopy->book->price ?? 15000);
                 $createdFines[] = Fine::create([
                     'borrow_id' => $borrow->id,
-                    'amount'    => CurrencyHelper::khrToUsd($lostFeeKhr),
+                    'amount'    => (float) $lostFeeKhr,
                     'reason'    => 'lost',
                     'status'    => 'unpaid',
                     'notes'     => $request->input('notes'),
@@ -254,8 +253,8 @@ class BorrowController extends Controller
                     'user_id' => $borrow->member->user_id,
                     'title'   => 'You have a new fine',
                     'message' => sprintf(
-                        'A fine of $%.2f was applied for "%s".',
-                        $totalFineUsd,
+                        'A fine of %s KHR was applied for "%s".',
+                        number_format($totalFineUsd),
                         $borrow->bookCopy->book->title
                     ),
                     'type'    => 'fine',
@@ -267,7 +266,7 @@ class BorrowController extends Controller
 
             return response()->json([
                 'message' => $totalFineUsd > 0
-                    ? sprintf('Book returned successfully (Total fines: $%.2f).', $totalFineUsd)
+                    ? sprintf('Book returned successfully (Total fines: %s KHR).', number_format($totalFineUsd))
                     : 'Book returned successfully.',
                 'data' => $borrow->fresh()->load(['member.user', 'bookCopy.book.category', 'fines']),
             ]);

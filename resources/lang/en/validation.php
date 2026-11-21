@@ -83,7 +83,7 @@ return [
         // Fine
         'fine' => [
             'amount' => [
-                'max' => 'Fine amount cannot exceed $500. If this book genuinely costs more to replace, contact an administrator to record it manually.',
+                'max' => 'Fine amount cannot exceed 2,000,000 KHR. If this book genuinely costs more to replace, contact an administrator to record it manually.',
             ],
         ],
 

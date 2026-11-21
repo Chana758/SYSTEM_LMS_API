@@ -12,7 +12,8 @@ class StoreFineRequest extends FormRequest
     {
         return [
             'borrow_id' => ['required', 'exists:borrow_transactions,id'],
-            'amount'    => ['required', 'numeric', 'min:0.01', 'max:500'],
+            // Riel (FIN1). 100 is the smallest KHQR amount.
+            'amount'    => ['required', 'numeric', 'min:100', 'max:2000000'],
             'reason'    => ['required', 'in:overdue,damaged,lost,other'],
             'notes'     => ['nullable', 'string', 'max:500'],
         ];

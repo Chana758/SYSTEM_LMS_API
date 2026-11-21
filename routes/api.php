@@ -4,7 +4,7 @@ use App\Http\Controllers\Api\{
     AccountController, AuthController, AvatarController, BackupController,
     BookController, BookReviewController, BorrowController, CategoryController,
     ChatbotController,
-    DashboardController, EbookController, EbookFavoriteController, FineController,
+    DashboardController, EbookController, EbookFavoriteController, FineController, PaymentController,
     LibrarianController, MemberAccountController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
     RecommendationController,
     ReportController,
@@ -200,6 +200,24 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('fines')->gr
 });
 
 Route::middleware('auth:sanctum')->get('/my-fines', [FineController::class, 'myFines']);
+
+// 9.1. PAYMENTS (Sam: KHQR via ABA PayWay, B5.1-B5.4)
+Route::middleware('auth:sanctum')->group(function () {
+    // Owner of the fine, or staff at the desk. Amount comes from the database.
+    Route::post('fines/{fine}/khqr', [PaymentController::class, 'payFine'])->middleware('throttle:10,1');
+    Route::get('payments/{payment}/status', [PaymentController::class, 'status'])->middleware('throttle:60,1');
+    Route::get('my-payments', [PaymentController::class, 'mine']);
+
+    Route::middleware('role:admin,librarian')->group(function () {
+        Route::get('payments', [PaymentController::class, 'index']);
+        Route::post('payments/{payment}/simulate-paid', [PaymentController::class, 'simulatePaid']);
+    });
+});
+
+// Called by PayWay's server (no login). The body is not trusted; we re-check with the bank.
+Route::post('payments/payway/callback', [PaymentController::class, 'paywayCallback'])
+    ->middleware('throttle:60,1')
+    ->name('payments.payway.callback');
 
 // 6.5. SCANNER
 Route::middleware('auth:sanctum')->prefix('scan')->group(function () {

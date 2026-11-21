@@ -1,0 +1,22 @@
+<?php
+
+return [
+    'FINE_NOT_UNPAID'       => 'This fine is already paid or waived.',
+    'FINE_HAS_NO_MEMBER'    => 'No member was found for this fine.',
+    'NOT_YOUR_FINE'         => 'This fine is not yours.',
+    'AMOUNT_TOO_SMALL'      => 'KHQR payments must be at least 100 KHR.',
+    'BANK_ERROR'            => 'The QR could not be created right now. Try again, or pay cash at the front desk.',
+    'SIMULATE_ONLY_TEST'    => 'The test button only works in test mode.',
+    'CASH_RECORDED'         => 'Cash payment recorded.',
+    'WAIVE_REASON_REQUIRED' => 'Please write why this fine is waived (at least 5 characters).',
+    'NOTIFY_FINE_TITLE'     => 'You have a new fine',
+    'NOTIFY_FINE_BODY'      => 'A fine of :amount KHR for :reason. You can pay by KHQR in the app or at the front desk.',
+    'NOTIFY_PAID_TITLE'     => 'Fine payment received',
+    'NOTIFY_PAID_BODY'      => 'We received your fine payment of :amount KHR. Thank you!',
+    'NOTIFY_WAIVED_TITLE'   => 'Fine waived',
+    'NOTIFY_WAIVED_BODY'    => 'Your fine of :amount KHR was waived by the librarian.',
+    'REASON_OVERDUE'        => 'an overdue book',
+    'REASON_DAMAGED'        => 'a damaged book',
+    'REASON_LOST'           => 'a lost book',
+    'REASON_OTHER'          => 'a library fine',
+];

@@ -7,15 +7,19 @@ use App\Http\Requests\Fine\StoreFineRequest;
 use App\Models\Fine;
 use App\Models\Member;
 use App\Models\Notification;
-use App\Support\CurrencyHelper;
+use App\Services\Payments\PaymentService;
 use Illuminate\Http\Request;
 
+/**
+ * Fines (Sam). Amounts are stored in Riel (FIN1).
+ * Cash at the desk -> pay(); KHQR -> PaymentController::payFine().
+ */
 class FineController extends Controller
 {
     /** List all fines with status, reason and member-name filters (staff). */
     public function index(Request $request)
     {
-        $query = Fine::with(['borrow.member.user', 'borrow.bookCopy.book'])->latest();
+        $query = Fine::with(['borrow.member.user', 'borrow.bookCopy.book', 'waivedBy:id,name'])->latest();
 
         if ($request->filled('status')) $query->where('status', $request->status);
         if ($request->filled('reason')) $query->where('reason', $request->reason);
@@ -41,23 +45,19 @@ class FineController extends Controller
         return response()->json($query->paginate($request->get('per_page', 15)));
     }
 
-    /** Create a fine (amount converted from Riel to USD) and notify the member. */
+    /** Create a fine (amount in Riel) and notify the member. */
     public function store(StoreFineRequest $request)
     {
-        $validated = $request->validated();
-        $validated['amount'] = CurrencyHelper::khrToUsd($validated['amount']);
-
-        $fine = Fine::create($validated);
+        $fine = Fine::create($request->validated());
         $fine->load('borrow.member.user', 'borrow.bookCopy.book');
 
         $this->notifyMember(
             $fine,
-            'Fine Issued',
-            sprintf(
-                'A fine of $%s has been issued for %s.',
-                number_format($fine->amount, 2),
-                $this->reasonLabel($fine)
-            )
+            __('payments.NOTIFY_FINE_TITLE'),
+            __('payments.NOTIFY_FINE_BODY', [
+                'amount' => number_format((float) $fine->amount),
+                'reason' => __('payments.REASON_' . strtoupper($fine->reason ?? 'OTHER')),
+            ])
         );
 
         return response()->json([
@@ -66,59 +66,61 @@ class FineController extends Controller
         ], 201);
     }
 
-    /** Show one fine with its borrow, member and book. */
+    /** Show one fine with its borrow, member, book and payments. */
     public function show(Fine $fine)
     {
-        return response()->json($fine->load(['borrow.member.user', 'borrow.bookCopy.book']));
+        return response()->json($fine->load([
+            'borrow.member.user', 'borrow.bookCopy.book', 'waivedBy:id,name',
+            'payments' => fn ($q) => $q->latest(),
+        ]));
     }
 
-    /** Mark a fine as paid with a payment method and notify the member. */
-    public function pay(Request $request, Fine $fine)
+    /** Staff takes cash at the desk (FIN2). KHQR goes through PaymentController. */
+    public function pay(Request $request, Fine $fine, PaymentService $payments)
     {
-        if ($fine->status === 'paid') {
-            return response()->json(['message' => 'This fine has already been paid.'], 422);
-        }
+        $request->validate(['payment_method' => ['nullable', 'in:cash']]);
 
-        $request->validate(['payment_method' => ['required', 'in:cash,card,bank_transfer,other']]);
-
-        $fine->update([
-            'status' => 'paid',
-            'paid_at' => now(),
-            'payment_method' => $request->payment_method,
-        ]);
+        $payments->recordCash($fine, $request->user());
 
         $fine = $fine->fresh()->load('borrow.member.user', 'borrow.bookCopy.book');
 
         $this->notifyMember(
             $fine,
-            'Fine Payment Received',
-            sprintf('Your fine payment of $%s has been received.', number_format($fine->amount, 2))
+            __('payments.NOTIFY_PAID_TITLE'),
+            __('payments.NOTIFY_PAID_BODY', ['amount' => number_format((float) $fine->amount)])
         );
 
         return response()->json([
-            'message' => 'Fine paid successfully.',
+            'message' => __('payments.CASH_RECORDED'),
             'data' => $fine,
         ]);
     }
 
-    /** Waive an unpaid fine and notify the member. */
+    /** Waive an unpaid fine: a reason is required and the staff member is recorded (FIN3). */
     public function waive(Request $request, Fine $fine)
     {
+        $request->validate(['notes' => ['required', 'string', 'min:5', 'max:500']], [
+            'notes.required' => __('payments.WAIVE_REASON_REQUIRED'),
+            'notes.min'      => __('payments.WAIVE_REASON_REQUIRED'),
+        ]);
+
         if ($fine->status !== 'unpaid') {
-            return response()->json(['message' => 'This fine cannot be waived.'], 422);
+            return response()->json(['message' => __('payments.FINE_NOT_UNPAID')], 422);
         }
 
         $fine->update([
-            'status' => 'waived',
-            'notes' => $request->input('notes', $fine->notes),
+            'status'    => 'waived',
+            'notes'     => $request->input('notes'),
+            'waived_by' => $request->user()->id,
+            'waived_at' => now(),
         ]);
 
-        $fine = $fine->fresh()->load('borrow.member.user', 'borrow.bookCopy.book');
+        $fine = $fine->fresh()->load('borrow.member.user', 'borrow.bookCopy.book', 'waivedBy:id,name');
 
         $this->notifyMember(
             $fine,
-            'Fine Waived',
-            sprintf('Your fine of $%s has been waived by the librarian.', number_format($fine->amount, 2))
+            __('payments.NOTIFY_WAIVED_TITLE'),
+            __('payments.NOTIFY_WAIVED_BODY', ['amount' => number_format((float) $fine->amount)])
         );
 
         return response()->json([
@@ -127,13 +129,14 @@ class FineController extends Controller
         ]);
     }
 
-    /** Return total unpaid, paid and waived amounts plus the unpaid count. */
+    /** Return total unpaid, paid and waived amounts (Riel) plus the unpaid count. */
     public function summary()
     {
         return response()->json([
-            'total_unpaid' => Fine::where('status', 'unpaid')->sum('amount'),
-            'total_paid' => Fine::where('status', 'paid')->sum('amount'),
-            'total_waived' => Fine::where('status', 'waived')->sum('amount'),
+            'currency' => 'KHR',
+            'total_unpaid' => (float) Fine::where('status', 'unpaid')->sum('amount'),
+            'total_paid' => (float) Fine::where('status', 'paid')->sum('amount'),
+            'total_waived' => (float) Fine::where('status', 'waived')->sum('amount'),
             'count_unpaid' => Fine::where('status', 'unpaid')->count(),
         ]);
     }
@@ -156,16 +159,5 @@ class FineController extends Controller
             'is_read' => false,
             'sent_at' => now(),
         ]);
-    }
-
-    /** Turn a fine reason into a readable phrase for notification messages. */
-    private function reasonLabel(Fine $fine): string
-    {
-        return match ($fine->reason) {
-            'damaged' => 'a damaged book',
-            'lost' => 'a lost book',
-            'overdue' => 'an overdue book',
-            default => $fine->reason ?? 'a library fine',
-        };
     }
 }
