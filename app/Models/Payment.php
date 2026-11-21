@@ -14,7 +14,7 @@ class Payment extends Model
     public const CANCELLED = 'cancelled';
 
     protected $fillable = [
-        'tran_id', 'user_id', 'payable_type', 'payable_id', 'purpose', 'amount', 'currency',
+        'tran_id', 'user_id', 'payable_type', 'payable_id', 'purpose', 'amount', 'currency', 'amount_khr', 'exchange_rate',
         'method', 'provider', 'status', 'qr_string', 'apv', 'provider_response',
         'expires_at', 'paid_at', 'last_checked_at', 'created_by',
     ];
@@ -23,6 +23,8 @@ class Payment extends Model
 
     protected $casts = [
         'amount'            => 'decimal:2',
+        'amount_khr'        => 'decimal:2',
+        'exchange_rate'     => 'decimal:2',
         'provider_response' => 'array',
         'expires_at'        => 'datetime',
         'paid_at'           => 'datetime',

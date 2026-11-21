@@ -207,6 +207,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('fines/{fine}/khqr', [PaymentController::class, 'payFine'])->middleware('throttle:10,1');
     Route::get('payments/{payment}/status', [PaymentController::class, 'status'])->middleware('throttle:60,1');
     Route::get('my-payments', [PaymentController::class, 'mine']);
+    Route::get('payment-config', [PaymentController::class, 'config']);
 
     Route::middleware('role:admin,librarian')->group(function () {
         Route::get('payments', [PaymentController::class, 'index']);

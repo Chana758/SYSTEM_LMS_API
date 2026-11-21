@@ -7,6 +7,7 @@ use App\Models\Fine;
 use App\Models\Payment;
 use App\Services\Payments\FakeGateway;
 use App\Services\Payments\PaymentService;
+use App\Support\Money;
 use Illuminate\Http\Request;
 
 /** B5.1-B5.4: KHQR payments, bank callback and payment history. */
@@ -26,7 +27,8 @@ class PaymentController extends Controller
             return response()->json(['message' => __('payments.NOT_YOUR_FINE')], 403);
         }
 
-        $result = $this->payments->startForFine($fine->load('borrow.member.user'), $user, $isStaff ? $user : null);
+        $currency = $this->currency($request);
+        $result = $this->payments->startForFine($fine->load('borrow.member.user'), $user, $isStaff ? $user : null, $currency);
 
         return response()->json($this->present($result['payment'], $result['qr_image'], $result['deeplink']), 201);
     }
@@ -81,11 +83,12 @@ class PaymentController extends Controller
         }
 
         $summary = [
-            'refunded_total' => (float) (clone $query)->reorder()->where('status', 'refunded')->sum('amount'),
-            'paid_total' => (float) (clone $query)->reorder()->where('status', Payment::PAID)->sum('amount'),
+            // Totals in Riel (amount_khr), whatever currency each payment used
+            'refunded_total' => (float) (clone $query)->reorder()->where('status', 'refunded')->sum('amount_khr'),
+            'paid_total' => (float) (clone $query)->reorder()->where('status', Payment::PAID)->sum('amount_khr'),
             'paid_count' => (clone $query)->reorder()->where('status', Payment::PAID)->count(),
-            'khqr_total' => (float) (clone $query)->reorder()->where('status', Payment::PAID)->where('method', 'khqr')->sum('amount'),
-            'cash_total' => (float) (clone $query)->reorder()->where('status', Payment::PAID)->where('method', 'cash')->sum('amount'),
+            'khqr_total' => (float) (clone $query)->reorder()->where('status', Payment::PAID)->where('method', 'khqr')->sum('amount_khr'),
+            'cash_total' => (float) (clone $query)->reorder()->where('status', Payment::PAID)->where('method', 'cash')->sum('amount_khr'),
         ];
 
         return response()->json(
@@ -115,6 +118,20 @@ class PaymentController extends Controller
         return response()->json($this->present($this->payments->refresh($payment, force: true)));
     }
 
+    /** GET /payment-config: exchange rate + default currency for the ៛/$ switch. */
+    public function config()
+    {
+        return response()->json(Money::publicConfig());
+    }
+
+    /** "currency" from the request: KHR (default) or USD. */
+    public function currency(Request $request): string
+    {
+        $request->validate(['currency' => ['nullable', 'in:KHR,USD,khr,usd']]);
+
+        return strtoupper((string) $request->input('currency', 'KHR')) === 'USD' ? 'USD' : 'KHR';
+    }
+
     /** Shared with DepositController so both screens get the same shape. */
     public function presentPayment(Payment $payment, ?string $qrImage = null, ?string $deeplink = null): array
     {
@@ -129,6 +146,8 @@ class PaymentController extends Controller
             'purpose'    => $payment->purpose,
             'amount'     => (float) $payment->amount,
             'currency'   => $payment->currency,
+            'amount_khr' => (float) $payment->amount_khr,
+            'exchange_rate' => $payment->exchange_rate ? (float) $payment->exchange_rate : null,
             'method'     => $payment->method,
             'provider'   => $payment->provider,
             'status'     => $payment->status,

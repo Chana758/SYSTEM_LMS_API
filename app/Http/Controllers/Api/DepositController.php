@@ -53,7 +53,7 @@ class DepositController extends Controller
 
         abort_unless($isStaff || $member->user_id === $user->id, 403);
 
-        $result = $payments->startForDeposit($member->load('user'), $user, $isStaff ? $user : null);
+        $result = $payments->startForDeposit($member->load('user'), $user, $isStaff ? $user : null, $presenter->currency($request));
 
         return response()->json($presenter->presentPayment($result['payment'], $result['qr_image'], $result['deeplink']), 201);
     }

@@ -6,6 +6,7 @@ use App\Models\Fine;
 use App\Models\Notification;
 use App\Models\Payment;
 use App\Models\User;
+use App\Support\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -37,15 +38,15 @@ class PaymentService
     }
 
     /** Start (or reuse) a KHQR payment for a member's deposit (B6.2). */
-    public function startForDeposit(\App\Models\Member $member, User $payer, ?User $staff = null): array
+    public function startForDeposit(\App\Models\Member $member, User $payer, ?User $staff = null, string $currency = 'KHR'): array
     {
         app(\App\Services\DepositService::class)->assertUnpaid($member);
 
-        return $this->start($member, $member->user, 'deposit', (float) $member->deposit_amount, $staff);
+        return $this->start($member, $member->user, 'deposit', (float) $member->deposit_amount, $staff, $currency);
     }
 
     /** Start (or reuse) a KHQR payment for one unpaid fine. */
-    public function startForFine(Fine $fine, User $payer, ?User $staff = null): array
+    public function startForFine(Fine $fine, User $payer, ?User $staff = null, string $currency = 'KHR'): array
     {
         if ($fine->status !== 'unpaid') {
             throw ValidationException::withMessages(['fine' => __('payments.FINE_NOT_UNPAID')]);
@@ -56,19 +57,26 @@ class PaymentService
             throw ValidationException::withMessages(['fine' => __('payments.FINE_HAS_NO_MEMBER')]);
         }
 
-        return $this->start($fine, $owner, 'fine', (float) $fine->amount, $staff);
+        return $this->start($fine, $owner, 'fine', (float) $fine->amount, $staff, $currency);
     }
 
     /**
-     * Generic start: reuse a pending, unexpired QR for the same item, otherwise ask the bank for a new one.
+     * Generic start: reuse a pending, unexpired QR for the same item and currency,
+     * otherwise ask the bank for a new one. $amountKhr is what the library is owed in Riel;
+     * $currency (KHR or USD) is what the payer chose to pay in.
      *
      * @return array{payment: Payment, qr_image: ?string, deeplink: ?string}
      */
-    public function start($payable, User $owner, string $purpose, float $amount, ?User $staff = null): array
+    public function start($payable, User $owner, string $purpose, float $amountKhr, ?User $staff = null, string $currency = 'KHR'): array
     {
-        if ($amount < 100) {
+        $currency = strtoupper($currency) === 'USD' ? 'USD' : 'KHR';
+
+        if ($amountKhr < 100) {
             throw ValidationException::withMessages(['amount' => __('payments.AMOUNT_TOO_SMALL')]);
         }
+
+        $rate = Money::rate();
+        $amount = Money::charge($amountKhr, $currency, $rate);
 
         $existing = Payment::where('payable_type', $payable->getMorphClass())
             ->where('payable_id', $payable->getKey())
@@ -76,7 +84,7 @@ class PaymentService
             ->latest()
             ->first();
 
-        if ($existing && ! $existing->isExpired() && (float) $existing->amount === $amount) {
+        if ($existing && ! $existing->isExpired() && $existing->currency === $currency && (float) $existing->amount === $amount) {
             return ['payment' => $existing, 'qr_image' => null, 'deeplink' => null];
         }
 
@@ -91,7 +99,9 @@ class PaymentService
             'payable_id'   => $payable->getKey(),
             'purpose'      => $purpose,
             'amount'       => $amount,
-            'currency'     => config('payment.currency', 'KHR'),
+            'currency'     => $currency,
+            'amount_khr'   => $amountKhr,
+            'exchange_rate'=> $currency === 'USD' ? $rate : null,
             'method'       => 'khqr',
             'provider'     => $this->gateway->name(),
             'status'       => Payment::PENDING,
@@ -166,7 +176,8 @@ class PaymentService
                 'payable_id'   => $fine->id,
                 'purpose'      => 'fine',
                 'amount'       => $fine->amount,
-                'currency'     => config('payment.currency', 'KHR'),
+                'currency'     => 'KHR',
+                'amount_khr'   => $fine->amount,
                 'method'       => 'cash',
                 'provider'     => 'desk',
                 'status'       => Payment::PAID,
@@ -189,8 +200,9 @@ class PaymentService
                 return $payment; // already handled by another request
             }
 
-            // The bank must have charged exactly what we asked for.
-            if ($result['amount'] !== null && abs($result['amount'] - (float) $payment->amount) > 0.009) {
+            // The bank must have charged exactly what we asked for, in the same currency.
+            $wrongCurrency = ! empty($result['currency']) && strtoupper((string) $result['currency']) !== $payment->currency;
+            if ($wrongCurrency || ($result['amount'] !== null && abs($result['amount'] - (float) $payment->amount) > 0.009)) {
                 $payment->update(['status' => Payment::FAILED, 'provider_response' => ['amount_mismatch' => $result['raw']]]);
                 Log::error('KHQR amount mismatch', ['tran_id' => $payment->tran_id, 'bank' => $result['amount'], 'ours' => $payment->amount]);
                 return $payment;
@@ -222,7 +234,7 @@ class PaymentService
             Notification::create([
                 'user_id' => $payment->user_id,
                 'title'   => __('payments.NOTIFY_PAID_TITLE'),
-                'message' => __('payments.NOTIFY_PAID_BODY', ['amount' => number_format((float) $payment->amount)]),
+                'message' => __('payments.NOTIFY_PAID_BODY', ['amount' => number_format((float) $payment->amount_khr)]),
                 'type'    => 'fine',
                 'link'    => '/my-fines',
                 'is_read' => false,
