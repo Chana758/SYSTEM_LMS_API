@@ -14,7 +14,7 @@ class Payment extends Model
     public const CANCELLED = 'cancelled';
 
     protected $fillable = [
-        'tran_id', 'user_id', 'payable_type', 'payable_id', 'purpose', 'amount', 'currency', 'amount_khr', 'exchange_rate',
+        'tran_id', 'user_id', 'payable_type', 'payable_id', 'purpose', 'amount', 'currency', 'amount_khr', 'exchange_rate', 'cash_received_khr', 'cash_received_usd', 'change_khr',
         'method', 'provider', 'status', 'qr_string', 'apv', 'provider_response',
         'expires_at', 'paid_at', 'last_checked_at', 'created_by',
     ];
@@ -25,6 +25,9 @@ class Payment extends Model
         'amount'            => 'decimal:2',
         'amount_khr'        => 'decimal:2',
         'exchange_rate'     => 'decimal:2',
+        'cash_received_khr' => 'decimal:2',
+        'cash_received_usd' => 'decimal:2',
+        'change_khr'        => 'decimal:2',
         'provider_response' => 'array',
         'expires_at'        => 'datetime',
         'paid_at'           => 'datetime',
@@ -34,6 +37,11 @@ class Payment extends Model
     public function payable()
     {
         return $this->morphTo();
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function user()

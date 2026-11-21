@@ -4,7 +4,7 @@ use App\Http\Controllers\Api\{
     AccountController, AuthController, AvatarController, BackupController,
     BookController, BookReviewController, BorrowController, CategoryController,
     ChatbotController,
-    DashboardController, EbookController, EbookFavoriteController, FineController, PaymentController,
+    DashboardController, EbookController, EbookFavoriteController, FineController, PaymentController, CashClosingController,
     DepositController, LibrarianController, MemberAccountController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
     RecommendationController,
     ReportController,
@@ -206,12 +206,18 @@ Route::middleware('auth:sanctum')->group(function () {
     // Owner of the fine, or staff at the desk. Amount comes from the database.
     Route::post('fines/{fine}/khqr', [PaymentController::class, 'payFine'])->middleware('throttle:10,1');
     Route::get('payments/{payment}/status', [PaymentController::class, 'status'])->middleware('throttle:60,1');
+    Route::get('payments/{payment}/receipt', [PaymentController::class, 'receipt']);
     Route::get('my-payments', [PaymentController::class, 'mine']);
     Route::get('payment-config', [PaymentController::class, 'config']);
 
     Route::middleware('role:admin,librarian')->group(function () {
         Route::get('payments', [PaymentController::class, 'index']);
         Route::post('payments/{payment}/simulate-paid', [PaymentController::class, 'simulatePaid']);
+
+        // End-of-day cash close (once per staff per day, never edited)
+        Route::get('cash-closing', [CashClosingController::class, 'show']);
+        Route::post('cash-closing', [CashClosingController::class, 'store'])->middleware('throttle:10,1');
+        Route::get('cash-closings', [CashClosingController::class, 'index']);
     });
 });
 

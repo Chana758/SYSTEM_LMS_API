@@ -28,4 +28,13 @@ return [
     'DEPOSIT_PAID_BODY'     => 'We received your :amount KHR deposit. You can borrow books now.',
     'DEPOSIT_CASH_RECORDED' => 'Cash deposit recorded.',
     'DEPOSIT_REFUNDED'      => 'Refunded :refund KHR (fines deducted: :deducted KHR).',
+    'CASH_NOT_ENOUGH'       => 'Not enough cash. :short KHR short.',
+    'CASH_TOO_MUCH'         => 'That cash amount is too large, please check it.',
+    'RECEIPT_DEPOSIT'       => 'Membership deposit',
+    'RECEIPT_DEPOSIT_REFUND'=> 'Deposit refund',
+    'CLOSING_EXISTS'        => 'You already closed the cash for this day.',
+    'CLOSING_NOTE_REQUIRED' => 'The count is different from the system. Please write why.',
+    'CLOSING_SAVED'         => 'Cash close saved.',
+    'CLOSING_DIFF_TITLE'    => 'Cash difference',
+    'CLOSING_DIFF_BODY'     => ':name closed :date with a difference of :khr KHR and $:usd.',
 ];

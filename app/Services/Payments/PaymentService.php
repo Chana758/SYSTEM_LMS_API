@@ -25,16 +25,21 @@ use Illuminate\Validation\ValidationException;
  */
 class PaymentService
 {
-    private PaymentGateway $gateway;
+    private ?PaymentGateway $gateway;
 
     public function __construct(?PaymentGateway $gateway = null)
     {
-        $this->gateway = $gateway ?? GatewayFactory::make();
+        $this->gateway = $gateway; // made on first KHQR use, so cash works without bank keys
+    }
+
+    private function gateway(): PaymentGateway
+    {
+        return $this->gateway ??= GatewayFactory::make();
     }
 
     public function driver(): string
     {
-        return $this->gateway->name();
+        return $this->gateway()->name();
     }
 
     /** Start (or reuse) a KHQR payment for a member's deposit (B6.2). */
@@ -103,14 +108,14 @@ class PaymentService
             'amount_khr'   => $amountKhr,
             'exchange_rate'=> $currency === 'USD' ? $rate : null,
             'method'       => 'khqr',
-            'provider'     => $this->gateway->name(),
+            'provider'     => $this->gateway()->name(),
             'status'       => Payment::PENDING,
             'expires_at'   => now()->addMinutes((int) config('payment.qr_lifetime_minutes', 10)),
             'created_by'   => $staff?->id,
         ]);
 
         try {
-            $qr = $this->gateway->createQr($payment, $this->customer($owner));
+            $qr = $this->gateway()->createQr($payment, $this->customer($owner));
         } catch (\Throwable $e) {
             $payment->update(['status' => Payment::FAILED, 'provider_response' => ['error' => $e->getMessage()]]);
             Log::warning('KHQR create failed', ['tran_id' => $payment->tran_id, 'error' => $e->getMessage()]);
@@ -140,7 +145,7 @@ class PaymentService
         $payment->update(['last_checked_at' => now()]);
 
         try {
-            $result = $this->gateway->checkStatus($payment);
+            $result = $this->gateway()->checkStatus($payment);
         } catch (\Throwable $e) {
             Log::warning('KHQR check failed', ['tran_id' => $payment->tran_id, 'error' => $e->getMessage()]);
             return $payment;
@@ -159,36 +164,77 @@ class PaymentService
         return $payment->fresh();
     }
 
-    /** Record a cash payment at the desk in the same history (B5.4). */
-    public function recordCash(Fine $fine, User $staff): Payment
+    /**
+     * Cash at the desk for a fine (B5.4). Received in Riel and/or Dollars;
+     * nothing entered = the exact amount in Riel.
+     */
+    public function recordCash(Fine $fine, User $staff, float $receivedKhr = 0, float $receivedUsd = 0): Payment
     {
-        return DB::transaction(function () use ($fine, $staff) {
+        return DB::transaction(function () use ($fine, $staff, $receivedKhr, $receivedUsd) {
             $fine = Fine::whereKey($fine->id)->lockForUpdate()->firstOrFail();
 
             if ($fine->status !== 'unpaid') {
                 throw ValidationException::withMessages(['fine' => __('payments.FINE_NOT_UNPAID')]);
             }
 
-            $payment = Payment::create([
-                'tran_id'      => $this->newTranId(),
-                'user_id'      => $fine->borrow?->member?->user_id ?? $staff->id,
-                'payable_type' => $fine->getMorphClass(),
-                'payable_id'   => $fine->id,
-                'purpose'      => 'fine',
-                'amount'       => $fine->amount,
-                'currency'     => 'KHR',
-                'amount_khr'   => $fine->amount,
-                'method'       => 'cash',
-                'provider'     => 'desk',
-                'status'       => Payment::PAID,
-                'paid_at'      => now(),
-                'created_by'   => $staff->id,
-            ]);
+            $payment = $this->cash(
+                $fine, (int) ($fine->borrow?->member?->user_id ?? $staff->id), 'fine',
+                (float) $fine->amount, $staff, $receivedKhr, $receivedUsd
+            );
 
             $fine->update(['status' => 'paid', 'paid_at' => now(), 'payment_method' => 'cash']);
 
             return $payment;
         });
+    }
+
+    /**
+     * One cash payment row. The amount owed comes from the database; the cash received
+     * (៛ and/or $ at today's rate) must cover it; change is given in Riel, rounded down to 100៛.
+     */
+    public function cash($payable, int $ownerId, string $purpose, float $amountKhr, User $staff, float $receivedKhr = 0, float $receivedUsd = 0): Payment
+    {
+        $receivedKhr = max(0, round($receivedKhr));
+        $receivedUsd = max(0, round($receivedUsd, 2));
+
+        if ($receivedKhr == 0 && $receivedUsd == 0) {
+            $receivedKhr = $amountKhr; // exact change in Riel
+        }
+
+        if ($receivedKhr > 100000000 || $receivedUsd > 25000) {
+            throw ValidationException::withMessages(['received' => __('payments.CASH_TOO_MUCH')]);
+        }
+
+        $rate = Money::rate();
+        $totalKhr = $receivedKhr + $receivedUsd * $rate;
+
+        if ($totalKhr + 0.5 < $amountKhr) {
+            throw ValidationException::withMessages(['received' => __('payments.CASH_NOT_ENOUGH', [
+                'short' => number_format($amountKhr - $totalKhr),
+            ])]);
+        }
+
+        $change = floor(($totalKhr - $amountKhr) / 100) * 100;
+
+        return Payment::create([
+            'tran_id'           => $this->newTranId(),
+            'user_id'           => $ownerId,
+            'payable_type'      => $payable->getMorphClass(),
+            'payable_id'        => $payable->getKey(),
+            'purpose'           => $purpose,
+            'amount'            => $amountKhr,
+            'currency'          => 'KHR',
+            'amount_khr'        => $amountKhr,
+            'exchange_rate'     => $receivedUsd > 0 ? $rate : null,
+            'cash_received_khr' => $receivedKhr,
+            'cash_received_usd' => $receivedUsd,
+            'change_khr'        => $change,
+            'method'            => 'cash',
+            'provider'          => 'desk',
+            'status'            => Payment::PAID,
+            'paid_at'           => now(),
+            'created_by'        => $staff->id,
+        ]);
     }
 
     private function markPaid(Payment $payment, array $result): Payment
@@ -264,7 +310,7 @@ class PaymentService
     }
 
     /** 20 characters max (PayWay): "LIB" + yymmddHHMMSS + 5 random. */
-    private function newTranId(): string
+    public function newTranId(): string
     {
         do {
             $id = 'LIB' . now()->format('ymdHis') . strtoupper(Str::random(5));

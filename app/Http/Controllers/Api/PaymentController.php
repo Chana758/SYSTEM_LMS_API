@@ -60,7 +60,7 @@ class PaymentController extends Controller
     /** GET /payments - staff history of every payment, KHQR and cash (B5.4). */
     public function index(Request $request)
     {
-        $query = Payment::with('user:id,name,email')->latest();
+        $query = Payment::with(['user:id,name,email', 'createdBy:id,name'])->latest();
 
         foreach (['status', 'method', 'purpose'] as $field) {
             if ($request->filled($field)) {
@@ -94,6 +94,32 @@ class PaymentController extends Controller
         return response()->json(
             $query->paginate(min((int) $request->input('per_page', 20), 100))->toArray() + ['summary' => $summary]
         );
+    }
+
+    /** GET /payments/{payment}/receipt - printable receipt (owner or staff). */
+    public function receipt(Request $request, Payment $payment)
+    {
+        $this->authorizeView($request, $payment);
+
+        $payment->load(['user:id,name,email,phone', 'createdBy:id,name', 'payable']);
+        $payable = $payment->payable;
+
+        $description = match ($payment->purpose) {
+            'fine'           => trim(__('payments.REASON_' . strtoupper($payable?->reason ?? 'OTHER')) . ' - ' . ($payable?->borrow?->bookCopy?->book?->title ?? '')),
+            'deposit'        => __('payments.RECEIPT_DEPOSIT'),
+            'deposit_refund' => __('payments.RECEIPT_DEPOSIT_REFUND'),
+            default          => $payment->purpose,
+        };
+
+        return response()->json($this->present($payment) + [
+            'description'       => $description,
+            'member'            => $payment->user?->only('name', 'email', 'phone'),
+            'staff'             => $payment->createdBy?->name,
+            'cash_received_khr' => (float) $payment->cash_received_khr,
+            'cash_received_usd' => (float) $payment->cash_received_usd,
+            'change_khr'        => (float) $payment->change_khr,
+            'created_at'        => $payment->created_at,
+        ]);
     }
 
     /** GET /my-payments - a member's own receipts. */

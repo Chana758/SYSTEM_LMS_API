@@ -37,28 +37,17 @@ class DepositService
         return $member->fresh();
     }
 
-    /** Staff took the deposit in cash at the desk. */
-    public function recordCash(Member $member, User $staff): Member
+    /** Staff took the deposit in cash at the desk (៛ and/or $, change in ៛). */
+    public function recordCash(Member $member, User $staff, float $receivedKhr = 0, float $receivedUsd = 0): Member
     {
-        return DB::transaction(function () use ($member, $staff) {
+        return DB::transaction(function () use ($member, $staff, $receivedKhr, $receivedUsd) {
             $member = Member::whereKey($member->id)->lockForUpdate()->firstOrFail();
             $this->assertUnpaid($member);
 
-            Payment::create([
-                'tran_id'      => $this->tranId(),
-                'user_id'      => $member->user_id,
-                'payable_type' => $member->getMorphClass(),
-                'payable_id'   => $member->id,
-                'purpose'      => 'deposit',
-                'amount'       => $member->deposit_amount,
-                'currency'     => 'KHR',
-                'amount_khr'   => $member->deposit_amount,
-                'method'       => 'cash',
-                'provider'     => 'desk',
-                'status'       => Payment::PAID,
-                'paid_at'      => now(),
-                'created_by'   => $staff->id,
-            ]);
+            app(\App\Services\Payments\PaymentService::class)->cash(
+                $member, (int) $member->user_id, 'deposit', (float) $member->deposit_amount,
+                $staff, $receivedKhr, $receivedUsd
+            );
 
             $this->markPaid($member);
 

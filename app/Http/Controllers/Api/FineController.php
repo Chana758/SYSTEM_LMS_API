@@ -78,9 +78,16 @@ class FineController extends Controller
     /** Staff takes cash at the desk (FIN2). KHQR goes through PaymentController. */
     public function pay(Request $request, Fine $fine, PaymentService $payments)
     {
-        $request->validate(['payment_method' => ['nullable', 'in:cash']]);
+        $data = $request->validate([
+            'payment_method' => ['nullable', 'in:cash'],
+            'received_khr'   => ['nullable', 'numeric', 'min:0'],
+            'received_usd'   => ['nullable', 'numeric', 'min:0'],
+        ]);
 
-        $payments->recordCash($fine, $request->user());
+        $payment = $payments->recordCash(
+            $fine, $request->user(),
+            (float) ($data['received_khr'] ?? 0), (float) ($data['received_usd'] ?? 0)
+        );
 
         $fine = $fine->fresh()->load('borrow.member.user', 'borrow.bookCopy.book');
 
@@ -93,6 +100,8 @@ class FineController extends Controller
         return response()->json([
             'message' => __('payments.CASH_RECORDED'),
             'data' => $fine,
+            'payment_id' => $payment->id,
+            'change_khr' => (float) $payment->change_khr,
         ]);
     }
 

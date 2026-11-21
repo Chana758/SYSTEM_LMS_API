@@ -28,4 +28,13 @@ return [
     'DEPOSIT_PAID_BODY'     => 'បានទទួលប្រាក់កក់ :amount៛ រួចហើយ។ ឥឡូវអ្នកអាចខ្ចីសៀវភៅបាន។',
     'DEPOSIT_CASH_RECORDED' => 'បានកត់ត្រាប្រាក់កក់សាច់ប្រាក់រួចហើយ។',
     'DEPOSIT_REFUNDED'      => 'បានសងប្រាក់កក់ :refund៛ (កាត់ពិន័យ :deducted៛)។',
+    'CASH_NOT_ENOUGH'       => 'លុយទទួលមិនគ្រប់ទេ។ ខ្វះ :short៛។',
+    'CASH_TOO_MUCH'         => 'ចំនួនលុយទទួលច្រើនពេក សូមពិនិត្យម្តងទៀត។',
+    'RECEIPT_DEPOSIT'       => 'ប្រាក់កក់សមាជិកភាព',
+    'RECEIPT_DEPOSIT_REFUND'=> 'សងប្រាក់កក់វិញ',
+    'CLOSING_EXISTS'        => 'អ្នកបានបិទបញ្ជីថ្ងៃនេះរួចហើយ។',
+    'CLOSING_NOTE_REQUIRED' => 'លុយរាប់បានខុសពីប្រព័ន្ធ។ សូមសរសេរហេតុផល។',
+    'CLOSING_SAVED'         => 'បានរក្សាទុកការបិទបញ្ជីសាច់ប្រាក់។',
+    'CLOSING_DIFF_TITLE'    => 'សាច់ប្រាក់មិនត្រូវគ្នា',
+    'CLOSING_DIFF_BODY'     => ':name បិទបញ្ជីថ្ងៃ :date ខុសគ្នា :khr៛ និង $:usd។',
 ];
