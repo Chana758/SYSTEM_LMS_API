@@ -21,7 +21,7 @@
 // ---- Change these -------------------------------------------------------
 const char* WIFI_SSID     = "SCHOOL-WIFI";
 const char* WIFI_PASSWORD = "wifi-password";
-const char* POLL_URL      = "https://api.example.edu.kh/api/door/1/poll";
+const char* POLL_URL      = "https://api.example.edu.kh/api/door/1/poll"; // http://<laptop IP>:8000/... on a test network
 const char* DOOR_KEY      = "paste-the-door-key-here";
 
 // Root certificate of the server's HTTPS (for Let's Encrypt: "ISRG Root X1").
@@ -35,6 +35,7 @@ const unsigned long POLL_EVERY_MS = 1000;
 // -------------------------------------------------------------------------
 
 WiFiClientSecure tls;
+WiFiClient plain;     // only for http:// on a test network
 unsigned long lastPoll = 0;
 unsigned long relayOffAt = 0;
 bool relayOn = false;
@@ -69,7 +70,9 @@ long readPulse(const String& body) {
 void poll() {
   HTTPClient http;
   http.setTimeout(4000);
-  if (!http.begin(tls, POLL_URL)) {
+  bool https = strncmp(POLL_URL, "https://", 8) == 0;
+  bool ok = https ? http.begin(tls, POLL_URL) : http.begin(plain, POLL_URL);
+  if (!ok) {
     Serial.println("HTTP: begin failed");
     return;
   }
