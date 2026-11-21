@@ -43,6 +43,8 @@ class MemberAccountController extends Controller
             'membership_type' => ['required', 'string', Rule::exists('membership_types', 'code')->where('is_active', true)],
             'student_id'      => ['nullable', 'string', 'max:30', Rule::unique('members', 'student_id')->ignore($member->id)],
             'expiry_date'     => ['nullable', 'date', 'after:today'],
+            // B6.2: staff took the deposit in cash while approving
+            'deposit_paid_cash' => ['nullable', 'boolean'],
         ]);
 
         if ($member->user?->status !== 'pending') {
@@ -62,6 +64,13 @@ class MemberAccountController extends Controller
 
             $member->user->forceFill(['status' => 'active'])->save();
         });
+
+        // B6.2: external (or any type with a deposit) must pay before borrowing.
+        $deposits = app(\App\Services\DepositService::class);
+        $member = $deposits->require($member->fresh());
+        if ($request->boolean('deposit_paid_cash') && $member->deposit_status === 'unpaid') {
+            $deposits->recordCash($member, $request->user());
+        }
 
         return response()->json([
             'message' => __('account.APPROVED'),

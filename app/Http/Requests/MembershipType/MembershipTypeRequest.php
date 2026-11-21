@@ -33,6 +33,8 @@ class MembershipTypeRequest extends FormRequest
             'max_renewals' => ['required', 'integer', 'min:0', 'max:10'],
             'renew_days'   => ['required', 'integer', 'min:1', 'max:90'],
             'fine_per_day' => ['required', 'integer', 'min:0', 'max:100000'],
+            // Riel; 0 = no deposit (B6.2)
+            'deposit_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
         ];
     }
 

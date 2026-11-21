@@ -19,4 +19,13 @@ return [
     'REASON_DAMAGED'        => 'សៀវភៅខូច',
     'REASON_LOST'           => 'សៀវភៅបាត់',
     'REASON_OTHER'          => 'ពិន័យបណ្ណាល័យ',
+    'TOKEN_EXPIRING_TITLE'  => 'Token Bakong ជិតផុតកំណត់',
+    'TOKEN_EXPIRING_BODY'   => 'Token Bakong នឹងផុតកំណត់ក្នុង :days ថ្ងៃ។ សូម Renew នៅ api-bakong.nbc.gov.kh ហើយដាក់ BAKONG_TOKEN ថ្មីក្នុង .env មិនដូច្នេះ KHQR នឹងឈប់ពិនិត្យការបង់។',
+    'DEPOSIT_NOT_DUE'       => 'សមាជិកនេះមិនមានប្រាក់កក់ត្រូវបង់ទេ។',
+    'DEPOSIT_NOT_PAID'      => 'ប្រាក់កក់មិនទាន់បានបង់ ដូច្នេះមិនអាចសងវិញបានទេ។',
+    'DEPOSIT_UNPAID'        => 'សូមបង់ប្រាក់កក់ :amount៛ ជាមុនសិន (KHQR ក្នុង App ឬសាច់ប្រាក់នៅតុបញ្ជរ) ទើបអាចខ្ចី ឬកក់សៀវភៅបាន។',
+    'DEPOSIT_PAID_TITLE'    => 'បានទទួលប្រាក់កក់',
+    'DEPOSIT_PAID_BODY'     => 'បានទទួលប្រាក់កក់ :amount៛ រួចហើយ។ ឥឡូវអ្នកអាចខ្ចីសៀវភៅបាន។',
+    'DEPOSIT_CASH_RECORDED' => 'បានកត់ត្រាប្រាក់កក់សាច់ប្រាក់រួចហើយ។',
+    'DEPOSIT_REFUNDED'      => 'បានសងប្រាក់កក់ :refund៛ (កាត់ពិន័យ :deducted៛)។',
 ];

@@ -19,6 +19,12 @@ class Member extends Model
         'student_id',
         'date_of_birth',
         'class_name',
+        'deposit_amount',
+        'deposit_status',
+        'deposit_paid_at',
+        'deposit_deducted',
+        'deposit_refunded',
+        'deposit_refunded_at',
         'identity_card_no',
         'emergency_contact',
         'membership_type',
@@ -34,6 +40,11 @@ class Member extends Model
         'join_date'   => 'date:Y-m-d',
         'expiry_date' => 'date:Y-m-d',
         'date_of_birth' => 'date:Y-m-d',
+        'deposit_amount' => 'decimal:2',
+        'deposit_deducted' => 'decimal:2',
+        'deposit_refunded' => 'decimal:2',
+        'deposit_paid_at' => 'datetime',
+        'deposit_refunded_at' => 'datetime',
     ];
 
     public function user(): BelongsTo

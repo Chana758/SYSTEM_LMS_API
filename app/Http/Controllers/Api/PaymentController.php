@@ -81,6 +81,7 @@ class PaymentController extends Controller
         }
 
         $summary = [
+            'refunded_total' => (float) (clone $query)->reorder()->where('status', 'refunded')->sum('amount'),
             'paid_total' => (float) (clone $query)->reorder()->where('status', Payment::PAID)->sum('amount'),
             'paid_count' => (clone $query)->reorder()->where('status', Payment::PAID)->count(),
             'khqr_total' => (float) (clone $query)->reorder()->where('status', Payment::PAID)->where('method', 'khqr')->sum('amount'),
@@ -112,6 +113,12 @@ class PaymentController extends Controller
         FakeGateway::markPaid($payment);
 
         return response()->json($this->present($this->payments->refresh($payment, force: true)));
+    }
+
+    /** Shared with DepositController so both screens get the same shape. */
+    public function presentPayment(Payment $payment, ?string $qrImage = null, ?string $deeplink = null): array
+    {
+        return $this->present($payment, $qrImage, $deeplink);
     }
 
     private function present(Payment $payment, ?string $qrImage = null, ?string $deeplink = null): array

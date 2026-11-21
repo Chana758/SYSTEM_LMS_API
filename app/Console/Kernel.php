@@ -25,6 +25,7 @@ class Kernel extends ConsoleKernel
     // Send a daily reminder to members with overdue books.
     $schedule->command('notifications:overdue')->dailyAt('08:00');
     $schedule->command('members:expire')->dailyAt('00:10');
+    $schedule->command('payments:check-bakong-token')->dailyAt('08:30');
 }
 
     /**

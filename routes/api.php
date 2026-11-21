@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\{
     BookController, BookReviewController, BorrowController, CategoryController,
     ChatbotController,
     DashboardController, EbookController, EbookFavoriteController, FineController, PaymentController,
-    LibrarianController, MemberAccountController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
+    DepositController, LibrarianController, MemberAccountController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
     RecommendationController,
     ReportController,
     ReservationController, ScanController, SettingController,BookCopyController,UserRoleController,
@@ -211,6 +211,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:admin,librarian')->group(function () {
         Route::get('payments', [PaymentController::class, 'index']);
         Route::post('payments/{payment}/simulate-paid', [PaymentController::class, 'simulatePaid']);
+    });
+});
+
+// 9.2. DEPOSITS (external members, B6.2/B6.4)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('my-deposit', [DepositController::class, 'mine']);
+    Route::post('members/{member}/deposit/khqr', [DepositController::class, 'khqr'])->middleware('throttle:10,1');
+
+    Route::middleware('role:admin,librarian')->prefix('members/{member}/deposit')->group(function () {
+        Route::get('/', [DepositController::class, 'show']);
+        Route::post('require', [DepositController::class, 'require']);
+        Route::post('cash', [DepositController::class, 'cash']);
+        Route::post('refund', [DepositController::class, 'refund']);
     });
 });
 

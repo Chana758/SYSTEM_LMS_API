@@ -19,4 +19,13 @@ return [
     'REASON_DAMAGED'        => 'a damaged book',
     'REASON_LOST'           => 'a lost book',
     'REASON_OTHER'          => 'a library fine',
+    'TOKEN_EXPIRING_TITLE'  => 'Bakong token expiring soon',
+    'TOKEN_EXPIRING_BODY'   => 'The Bakong token expires in :days days. Renew it at api-bakong.nbc.gov.kh and put the new BAKONG_TOKEN in .env, or KHQR payments will stop being confirmed.',
+    'DEPOSIT_NOT_DUE'       => 'This member has no deposit to pay.',
+    'DEPOSIT_NOT_PAID'      => 'The deposit has not been paid, so it cannot be refunded.',
+    'DEPOSIT_UNPAID'        => 'Please pay the :amount KHR deposit first (KHQR in the app or cash at the desk) before borrowing or reserving.',
+    'DEPOSIT_PAID_TITLE'    => 'Deposit received',
+    'DEPOSIT_PAID_BODY'     => 'We received your :amount KHR deposit. You can borrow books now.',
+    'DEPOSIT_CASH_RECORDED' => 'Cash deposit recorded.',
+    'DEPOSIT_REFUNDED'      => 'Refunded :refund KHR (fines deducted: :deducted KHR).',
 ];

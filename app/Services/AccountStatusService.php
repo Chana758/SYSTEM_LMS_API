@@ -56,6 +56,7 @@ class AccountStatusService
             $user->status === 'inactive'  => $this->reason('ACCOUNT_NOT_ACTIVATED'),
             $user->status === 'suspended' => $this->suspendedReason($user),
             $this->isExpired($member)     => $this->expiredReason($member),
+            $member->deposit_status === 'unpaid' => $this->reason('DEPOSIT_UNPAID', ['amount' => number_format((float) $member->deposit_amount)], 'payments'),
             default                       => null,
         };
     }
@@ -86,11 +87,11 @@ class AccountStatusService
             : $this->reason('MEMBERSHIP_EXPIRED_NO_DATE');
     }
 
-    private function reason(string $code, array $replace = []): array
+    private function reason(string $code, array $replace = [], string $file = 'account'): array
     {
         return [
             'code'    => $code,
-            'message' => __('account.' . $code, $replace),
+            'message' => __($file . '.' . $code, $replace),
         ];
     }
 }

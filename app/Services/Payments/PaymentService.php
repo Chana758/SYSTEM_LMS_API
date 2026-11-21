@@ -36,6 +36,14 @@ class PaymentService
         return $this->gateway->name();
     }
 
+    /** Start (or reuse) a KHQR payment for a member's deposit (B6.2). */
+    public function startForDeposit(\App\Models\Member $member, User $payer, ?User $staff = null): array
+    {
+        app(\App\Services\DepositService::class)->assertUnpaid($member);
+
+        return $this->start($member, $member->user, 'deposit', (float) $member->deposit_amount, $staff);
+    }
+
     /** Start (or reuse) a KHQR payment for one unpaid fine. */
     public function startForFine(Fine $fine, User $payer, ?User $staff = null): array
     {
@@ -221,7 +229,14 @@ class PaymentService
                 'sent_at' => now(),
             ]);
         }
-        // 'deposit' (B6.2) and 'ebook_rental' (B8.3) are added here when those modules are built.
+
+        if ($payment->purpose === 'deposit') {
+            $member = \App\Models\Member::whereKey($payment->payable_id)->lockForUpdate()->first();
+            if ($member) {
+                app(\App\Services\DepositService::class)->markPaid($member);
+            }
+        }
+        // 'ebook_rental' (B8.3) is added here when the e-book module is built.
     }
 
     private function customer(User $user): array
