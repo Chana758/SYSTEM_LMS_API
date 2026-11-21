@@ -9,7 +9,8 @@ use App\Http\Controllers\Api\{
     RecommendationController,
     ReportController,
     ReservationController, ScanController, SettingController,BookCopyController,UserRoleController,
-    RemoteScanController
+    RemoteScanController,
+    KioskController, DoorController, VisitController, KioskDeviceController, LoginLogController
 };
 use Illuminate\Support\Facades\Route;
 
@@ -38,6 +39,7 @@ Route::prefix('auth')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('logout-all', [AuthController::class, 'logoutAll']);
         Route::post('verify-password', [AuthController::class, 'verifyPassword'])->middleware('throttle:10,1');
+        Route::get('my-login-logs', [LoginLogController::class, 'mine']);
         Route::get('me', [AuthController::class, 'me']);
         Route::post('change-password', [AuthController::class, 'changePassword']);
         Route::put('profile/account', [AccountController::class, 'update']);
@@ -330,3 +332,44 @@ Route::middleware(['auth:sanctum'])
             Route::delete('/{id}',   [ReportController::class, 'destroy']);
         });
     });
+
+// 13. LIBRARY DOOR: kiosk check-in/out, visits, door controller, login logs (B4.4-B4.9)
+Route::middleware(['auth:sanctum', 'role:kiosk'])->prefix('kiosk')->group(function () {
+    Route::get('me', [KioskController::class, 'me']);
+    Route::post('scan', [KioskController::class, 'scan'])->middleware('throttle:60,1');
+    Route::post('guest', [KioskController::class, 'guest'])->middleware('throttle:20,1');
+    Route::get('guests', [KioskController::class, 'guests']);
+    Route::post('guests/{visit}/out', [KioskController::class, 'guestOut']);
+});
+
+// Door controller (ESP32 + relay) polls with its own key; no user login.
+Route::get('door/{device}/poll', [DoorController::class, 'poll'])
+    ->whereNumber('device')
+    ->middleware('throttle:120,1');
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('my-card/code', [VisitController::class, 'myCardCode'])->middleware('throttle:30,1');
+    Route::get('my-visits', [VisitController::class, 'mine']);
+
+    Route::middleware('role:admin,librarian')->group(function () {
+        Route::get('visits', [VisitController::class, 'index']);
+        Route::get('visits/stats', [VisitController::class, 'stats']);
+        Route::post('visits/check-in', [VisitController::class, 'checkIn']);
+        Route::post('visits/{visit}/check-out', [VisitController::class, 'checkOut']);
+    });
+
+    Route::middleware('role:admin')->group(function () {
+        Route::get('kiosk-devices', [KioskDeviceController::class, 'index']);
+        Route::post('kiosk-devices', [KioskDeviceController::class, 'store']);
+        Route::put('kiosk-devices/{kioskDevice}', [KioskDeviceController::class, 'update']);
+        Route::delete('kiosk-devices/{kioskDevice}', [KioskDeviceController::class, 'destroy']);
+        Route::post('kiosk-devices/{kioskDevice}/reset-password', [KioskDeviceController::class, 'resetPassword']);
+        Route::post('kiosk-devices/{kioskDevice}/door-key', [KioskDeviceController::class, 'doorKey']);
+        Route::post('kiosk-devices/{kioskDevice}/test-door', [KioskDeviceController::class, 'testDoor']);
+        Route::get('visit-settings', [KioskDeviceController::class, 'settings']);
+        Route::put('visit-settings', [KioskDeviceController::class, 'updateSettings']);
+
+        Route::get('login-logs', [LoginLogController::class, 'index']);
+        Route::get('login-logs/summary', [LoginLogController::class, 'summary']);
+    });
+});

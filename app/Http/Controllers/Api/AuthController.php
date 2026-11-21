@@ -14,6 +14,8 @@ use App\Models\Member;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\AccountStatusService;
+use App\Services\LoginLogger;
+use App\Support\VisitSettings;
 use App\Support\AuthSettings;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
@@ -96,6 +98,8 @@ class AuthController extends Controller
         $user = $this->findByIdentifier($identifier);
 
         if (! $user || ! Hash::check($request->input('password'), $user->password)) {
+            LoginLogger::record('login_failed', $user, false, 'INVALID_LOGIN', $identifier);
+
             return response()->json([
                 'code'    => 'INVALID_LOGIN',
                 'message' => __('account.INVALID_LOGIN'),
@@ -103,8 +107,12 @@ class AuthController extends Controller
         }
 
         if ($block = $this->accountStatus->loginBlock($user)) {
+            LoginLogger::record('login_blocked', $user, false, $block['code'] ?? null, $identifier);
+
             return response()->json($block, 403);
         }
+
+        LoginLogger::record('login', $user, true, null, $identifier);
 
         return $this->tokenResponse($user, 'Login successful', 'auth_token');
     }
@@ -143,6 +151,8 @@ class AuthController extends Controller
             'status'               => 'active',
         ])->save();
 
+        LoginLogger::record('activate', $member->user, true, null, $member->student_id);
+
         return response()->json([
             'message' => __('account.ACTIVATED'),
             'login'   => $member->student_id,
@@ -166,6 +176,7 @@ class AuthController extends Controller
     /** Log out by deleting only the current access token. */
     public function logout(Request $request)
     {
+        LoginLogger::record('logout', $request->user());
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logout successfully'], 200);
@@ -174,6 +185,7 @@ class AuthController extends Controller
     /** POST /auth/logout-all (B2.8): delete every token, e.g. when a phone is lost. */
     public function logoutAll(Request $request)
     {
+        LoginLogger::record('logout_all', $request->user());
         $request->user()->tokens()->delete();
 
         return response()->json(['message' => __('account.LOGGED_OUT_ALL')], 200);
@@ -407,6 +419,11 @@ class AuthController extends Controller
     /** A2: members stay logged in for N days, staff for one shift (N hours). */
     private function tokenExpiry(User $user)
     {
+        // A kiosk tablet stays logged in for months; admins can reset it any time.
+        if ($user->role?->name === 'kiosk') {
+            return now()->addDays(VisitSettings::kioskDays());
+        }
+
         return in_array($user->role?->name, ['admin', 'librarian'], true)
             ? now()->addHours(AuthSettings::sessionStaffHours())
             : now()->addDays(AuthSettings::sessionMemberDays());

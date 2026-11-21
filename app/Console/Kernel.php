@@ -26,6 +26,8 @@ class Kernel extends ConsoleKernel
     $schedule->command('notifications:overdue')->dailyAt('08:00');
     $schedule->command('members:expire')->dailyAt('00:10');
     $schedule->command('payments:check-bakong-token')->dailyAt('08:30');
+    // B4.7: check out people who left without scanning (every 15 minutes, closes after closing time)
+    $schedule->command('visits:close-forgotten')->everyFifteenMinutes()->withoutOverlapping();
 }
 
     /**
