@@ -16,6 +16,9 @@ class Member extends Model
     protected $fillable = [
         'user_id',
         'membership_no',
+        'student_id',
+        'date_of_birth',
+        'class_name',
         'identity_card_no',
         'emergency_contact',
         'membership_type',
@@ -30,6 +33,7 @@ class Member extends Model
     protected $casts = [
         'join_date'   => 'date:Y-m-d',
         'expiry_date' => 'date:Y-m-d',
+        'date_of_birth' => 'date:Y-m-d',
     ];
 
     public function user(): BelongsTo

@@ -1,0 +1,25 @@
+<?php
+
+return [
+    'ACCOUNT_PENDING'            => 'Your account is waiting for approval. Please bring your ID card to the front desk. You can browse books now, but you cannot borrow or reserve yet.',
+    'ACCOUNT_NOT_ACTIVATED'      => 'This account is not activated yet. Tap "Activate account" and use your student ID and date of birth, or visit the front desk.',
+    'ACCOUNT_SUSPENDED'          => 'Your account is suspended. Please contact a librarian at the front desk.',
+    'ACCOUNT_SUSPENDED_FINES'    => 'Your account is suspended because of unpaid fines of :amount KHR. Please pay at the front desk.',
+    'MEMBERSHIP_EXPIRED'         => 'Your membership expired on :date. Please renew it at the front desk.',
+    'MEMBERSHIP_EXPIRED_NO_DATE' => 'Your membership has expired. Please renew it at the front desk.',
+    'INVALID_LOGIN'              => 'Email/student ID or password is incorrect.',
+    'REGISTRATION_DISABLED'      => 'Online registration is turned off. Please register at the front desk.',
+    'REGISTERED_PENDING'         => 'Registered. Your account is waiting for approval.',
+    'ACTIVATION_DISABLED'        => 'Self-activation is turned off. Please visit the front desk.',
+    'ACTIVATION_FAILED'          => 'Student ID or date of birth is incorrect, or this account is already active.',
+    'ACTIVATED'                  => 'Your account is active. Log in with your student ID and new password.',
+    'LOGGED_OUT_ALL'             => 'Logged out of all devices.',
+    'WRONG_PASSWORD'             => 'Incorrect password.',
+    'APPROVED'                   => 'Account approved.',
+    'REJECTED'                   => 'Registration rejected.',
+    'NOT_PENDING'                => 'This account is not waiting for approval.',
+    'CREDENTIALS_RESET'          => 'A temporary password was created. Give it to the member; they must change it at first login.',
+    'RESET_ONLY_MEMBERS'         => 'Librarians can only reset member accounts.',
+    'MUST_CHANGE_PASSWORD'       => 'Please change your password first.',
+    'IMPORT_DONE'                => 'Imported :count accounts.',
+];

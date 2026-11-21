@@ -18,8 +18,10 @@ class User extends Authenticatable
         'qr_login_token', 'qr_login_token_expires_at',
     ];
 
+    // must_change_password and pin are set with forceFill() only, never from request input.
+
     protected $hidden = [
-        'password', 'remember_token', 'qr_login_token',
+        'password', 'remember_token', 'qr_login_token', 'pin', 'pin_failed_attempts',
     ];
 
     protected $casts = [
@@ -27,10 +29,18 @@ class User extends Authenticatable
         'password' => 'hashed',
         'qr_login_token_expires_at' => 'datetime',
         'is_demo' => 'boolean',
+        'must_change_password' => 'boolean',
+        'pin_locked_until' => 'datetime',
     ];
 
     // Always include has_qr_card in serialized output (the token itself stays hidden)
-    protected $appends = ['has_qr_card'];
+    protected $appends = ['has_qr_card', 'has_pin'];
+
+    /** True when the user has set a 4-digit PIN (used at self-checkout). */
+    public function getHasPinAttribute(): bool
+    {
+        return ! is_null($this->pin);
+    }
 
     /** True if the user has a QR login card that has not expired. */
     public function getHasQrCardAttribute(): bool

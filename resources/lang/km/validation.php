@@ -2,6 +2,15 @@
 
 return [
     'custom' => [
+        // Block 1: login / activation
+        'login' => ['required' => 'សូមបញ្ចូល Email ឬលេខសិស្ស'],
+        'student_id' => ['required' => 'សូមបញ្ចូលលេខសិស្ស'],
+        'date_of_birth' => ['required' => 'សូមបញ្ចូលថ្ងៃកំណើត'],
+        'pin' => [
+            'required' => 'សូមបញ្ចូល PIN 4 ខ្ទង់',
+            'digits' => 'PIN ត្រូវតែជាលេខ 4 ខ្ទង់',
+            'confirmed' => 'PIN ទាំងពីរមិនដូចគ្នា',
+        ],
         // Shared / Generic fields
         'email' => [
             'required' => 'សូមបញ្ចូលអ៊ីមែលរបស់អ្នក',

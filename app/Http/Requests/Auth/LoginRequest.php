@@ -22,7 +22,9 @@ class LoginRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'email'],
+            // B2.4: "login" accepts email, student ID or membership no. "email" is kept for old clients.
+            'login'    => ['required_without:email', 'nullable', 'string', 'max:255'],
+            'email'    => ['required_without:login', 'nullable', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ];
     }
@@ -36,8 +38,8 @@ class LoginRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'email.required' => __('validation.custom.email.required'),
-            'email.email' => __('validation.custom.email.email'),
+            'login.required_without' => __('validation.custom.login.required'),
+            'email.required_without' => __('validation.custom.login.required'),
             'password.required' => __('validation.custom.password.required'),
         ];
     }

@@ -131,6 +131,11 @@ class ReservationService
                 ? Member::findOrFail($memberId)
                 : $this->memberFor($actor);
 
+            // A1/B2.9: pending, suspended or expired accounts cannot reserve.
+            if ($block = app(AccountStatusService::class)->borrowBlock($member)) {
+                throw new ReservationException($block['message']);
+            }
+
             // Lock the book so two people can never both get priority 1
             Book::whereKey($bookId)->lockForUpdate()->firstOrFail();
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ActivateAccountRequest;
 use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
@@ -12,17 +13,30 @@ use App\Models\Librarian;
 use App\Models\Member;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\AccountStatusService;
+use App\Support\AuthSettings;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
     private const QR_TOKEN_LIFETIME_DAYS = 90;
+
+    public function __construct(private AccountStatusService $accountStatus)
+    {
+    }
+
+    /** GET /auth/config (public): what the Login page and staff screen lock need (B3.1). */
+    public function config()
+    {
+        return response()->json(AuthSettings::publicConfig());
+    }
 
     /*
      | Registration & login
@@ -31,17 +45,27 @@ class AuthController extends Controller
     /** Register a new member account (user + member profile) and return a token. */
     public function register(RegisterRequest $request)
     {
+        if (! AuthSettings::registrationEnabled()) {
+            return response()->json([
+                'code'    => 'REGISTRATION_DISABLED',
+                'message' => __('account.REGISTRATION_DISABLED'),
+            ], 403);
+        }
+
         $validated = $request->validated();
         $memberRole = Role::firstOrCreate(['name' => 'member']);
 
-        $user = DB::transaction(function () use ($validated, $memberRole) {
+        // A1: new accounts wait for staff approval (can browse, cannot borrow/reserve).
+        $status = AuthSettings::registrationRequiresApproval() ? 'pending' : 'active';
+
+        $user = DB::transaction(function () use ($validated, $memberRole, $status) {
             $user = User::create([
                 'name'     => $validated['name'],
-                'email'    => $validated['email'],
+                'email'    => strtolower($validated['email']),
                 'password' => Hash::make($validated['password']),
                 'phone'    => $validated['phone'] ?? null,
                 'role_id'  => $memberRole->id,
-                'status'   => 'active',
+                'status'   => $status,
             ]);
 
             Member::create([
@@ -56,25 +80,87 @@ class AuthController extends Controller
             return $user;
         });
 
-        return $this->tokenResponse($user, 'User registered successfully', 'auth_token', 201);
+        $message = $status === 'pending' ? __('account.REGISTERED_PENDING') : 'User registered successfully';
+
+        return $this->tokenResponse($user, $message, 'auth_token', 201);
     }
 
-    /** Log in with email and password; only active accounts get a token. */
+    /**
+     * Log in with email OR student ID / membership number (B2.4) and password.
+     * Refusals explain why (A3); pending/expired accounts may log in but get a notice.
+     */
     public function login(LoginRequest $request)
     {
-        $credentials = $request->validated();
+        $identifier = trim((string) ($request->input('login') ?? $request->input('email')));
 
-        $user = User::where('email', $credentials['email'])->first();
+        $user = $this->findByIdentifier($identifier);
 
-        if (! $user || ! Hash::check($credentials['password'], $user->password)) {
-            return response()->json(['message' => 'Invalid email or password'], 401);
+        if (! $user || ! Hash::check($request->input('password'), $user->password)) {
+            return response()->json([
+                'code'    => 'INVALID_LOGIN',
+                'message' => __('account.INVALID_LOGIN'),
+            ], 401);
         }
 
-        if ($user->status !== 'active') {
-            return response()->json(['message' => 'Your account is not active (inactive/suspended)'], 403);
+        if ($block = $this->accountStatus->loginBlock($user)) {
+            return response()->json($block, 403);
         }
 
         return $this->tokenResponse($user, 'Login successful', 'auth_token');
+    }
+
+    /**
+     * POST /auth/activate (public, B2.2): an imported student activates their own account
+     * with student ID + date of birth, then sets a password and a 4-digit PIN.
+     */
+    public function activate(ActivateAccountRequest $request)
+    {
+        if (! AuthSettings::activationEnabled()) {
+            return response()->json([
+                'code'    => 'ACTIVATION_DISABLED',
+                'message' => __('account.ACTIVATION_DISABLED'),
+            ], 403);
+        }
+
+        $member = Member::with('user')
+            ->where('student_id', trim($request->student_id))
+            ->whereDate('date_of_birth', $request->date_of_birth)
+            ->first();
+
+        // Same answer for "not found" and "already active" so IDs can't be probed.
+        if (! $member || ! $member->user || $member->user->status !== 'inactive') {
+            throw ValidationException::withMessages([
+                'student_id' => __('account.ACTIVATION_FAILED'),
+            ]);
+        }
+
+        $member->user->forceFill([
+            'password'             => Hash::make($request->password),
+            'pin'                  => Hash::make($request->pin),
+            'pin_failed_attempts'  => 0,
+            'pin_locked_until'     => null,
+            'must_change_password' => false,
+            'status'               => 'active',
+        ])->save();
+
+        return response()->json([
+            'message' => __('account.ACTIVATED'),
+            'login'   => $member->student_id,
+        ]);
+    }
+
+    /** POST /auth/verify-password: unlock the staff screen after the idle lock (B2.7). */
+    public function verifyPassword(Request $request)
+    {
+        $request->validate(['password' => ['required', 'string']]);
+
+        if (! Hash::check($request->password, $request->user()->password)) {
+            throw ValidationException::withMessages([
+                'password' => __('account.WRONG_PASSWORD'),
+            ]);
+        }
+
+        return response()->json(['ok' => true]);
     }
 
     /** Log out by deleting only the current access token. */
@@ -85,11 +171,22 @@ class AuthController extends Controller
         return response()->json(['message' => 'Logout successfully'], 200);
     }
 
+    /** POST /auth/logout-all (B2.8): delete every token, e.g. when a phone is lost. */
+    public function logoutAll(Request $request)
+    {
+        $request->user()->tokens()->delete();
+
+        return response()->json(['message' => __('account.LOGGED_OUT_ALL')], 200);
+    }
+
     /** Return the logged-in user with role, member and librarian profiles. */
     public function me(Request $request)
     {
+        $user = $request->user()->load('role', 'member', 'librarian');
+
         return response()->json([
-            'user' => $request->user()->load('role', 'member', 'librarian'),
+            'user'           => $user,
+            'account_notice' => $this->accountStatus->loginNotice($user),
         ], 200);
     }
 
@@ -188,6 +285,9 @@ class AuthController extends Controller
                 'status'   => 'active',
             ]);
 
+            // B2.6: the admin chose this password, so the librarian must replace it.
+            $user->forceFill(['must_change_password' => true])->save();
+
             Librarian::create([
                 'user_id'     => $user->id,
                 'employee_id' => $this->generateEmployeeId(),
@@ -212,7 +312,10 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        $user->forceFill(['password' => Hash::make($request->password)])->save();
+        $user->forceFill([
+            'password'             => Hash::make($request->password),
+            'must_change_password' => false,
+        ])->save();
 
         // Sign out every OTHER device, keep the current session alive.
         $current = $user->currentAccessToken();
@@ -254,6 +357,7 @@ class AuthController extends Controller
             function (User $user, string $password) {
                 $user->forceFill([
                     'password'                  => Hash::make($password),
+                    'must_change_password'      => false,
                     // A reset means "maybe compromised": revoke the QR card too.
                     'qr_login_token'            => null,
                     'qr_login_token_expires_at' => null,
@@ -287,12 +391,44 @@ class AuthController extends Controller
             $user->update(['last_login_at' => now()]);
         }
 
+        $user->load('role', 'member', 'librarian');
+        $expiresAt = $this->tokenExpiry($user);
+
         return response()->json([
-            'message'      => $message,
-            'user'         => $user->load('role', 'member', 'librarian'),
-            'token_type'   => 'Bearer',
-            'access_token' => $user->createToken($tokenName)->plainTextToken,
+            'message'        => $message,
+            'user'           => $user,
+            'account_notice' => $this->accountStatus->loginNotice($user),
+            'token_type'     => 'Bearer',
+            'access_token'   => $user->createToken($tokenName, ['*'], $expiresAt)->plainTextToken,
+            'expires_at'     => $expiresAt,
         ], $status);
+    }
+
+    /** A2: members stay logged in for N days, staff for one shift (N hours). */
+    private function tokenExpiry(User $user)
+    {
+        return in_array($user->role?->name, ['admin', 'librarian'], true)
+            ? now()->addHours(AuthSettings::sessionStaffHours())
+            : now()->addDays(AuthSettings::sessionMemberDays());
+    }
+
+    /** Find a user by email, student ID or membership number (B2.4). */
+    private function findByIdentifier(string $identifier): ?User
+    {
+        if ($identifier === '') {
+            return null;
+        }
+
+        if (str_contains($identifier, '@')) {
+            return User::whereRaw('LOWER(email) = ?', [strtolower($identifier)])->first();
+        }
+
+        $member = Member::with('user')
+            ->where('student_id', $identifier)
+            ->orWhereRaw('UPPER(membership_no) = ?', [strtoupper($identifier)])
+            ->first();
+
+        return $member?->user;
     }
 
     /** Hash a raw QR token with SHA-256 so only the hash is stored. */

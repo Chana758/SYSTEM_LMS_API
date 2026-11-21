@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\{
     BookController, BookReviewController, BorrowController, CategoryController,
     ChatbotController,
     DashboardController, EbookController, EbookFavoriteController, FineController,
-    LibrarianController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
+    LibrarianController, MemberAccountController, MemberController, MembershipTypeController, NotificationController, PreferenceController,
     RecommendationController,
     ReportController,
     ReservationController, ScanController, SettingController,BookCopyController,UserRoleController,
@@ -27,6 +27,8 @@ Route::prefix('auth')->group(function () {
     // Throttled per IP to stop password guessing (brute force): N attempts per minute.
     Route::post('register', [AuthController::class, 'register'])->middleware('throttle:5,1');
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    Route::get('config', [AuthController::class, 'config']);
+    Route::post('activate', [AuthController::class, 'activate'])->middleware('throttle:5,1');
 
     // Forgot / reset password (frontend calls /auth/forgot-password and /auth/reset-password)
     Route::post('forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
@@ -34,6 +36,8 @@ Route::prefix('auth')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
+        Route::post('logout-all', [AuthController::class, 'logoutAll']);
+        Route::post('verify-password', [AuthController::class, 'verifyPassword'])->middleware('throttle:10,1');
         Route::get('me', [AuthController::class, 'me']);
         Route::post('change-password', [AuthController::class, 'changePassword']);
         Route::put('profile/account', [AccountController::class, 'update']);
@@ -49,6 +53,7 @@ Route::prefix('auth')->group(function () {
         Route::middleware('role:admin,librarian')->group(function () {
             Route::post('users/{user}/qr-token/generate', [AuthController::class, 'generateQrTokenFor']);
             Route::get('pending-cards', [AuthController::class, 'pendingCards']);
+            Route::post('users/{user}/reset-credentials', [MemberAccountController::class, 'resetCredentials']);
         });
 
         Route::middleware('role:admin')->post('create-librarian', [AuthController::class, 'createLibrarian']);
@@ -152,6 +157,14 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('members')->
     Route::put('{member}', [MemberController::class, 'update']);
     Route::delete('{member}', [MemberController::class, 'destroy']);
     Route::post('{id}/restore', [MemberController::class, 'restore']);
+});
+
+// 5.1. MEMBER ACCOUNTS (block 1: approval, import)
+Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('member-accounts')->group(function () {
+    Route::get('pending', [MemberAccountController::class, 'pending']);
+    Route::post('import', [MemberAccountController::class, 'import'])->middleware('throttle:10,1');
+    Route::post('{member}/approve', [MemberAccountController::class, 'approve']);
+    Route::post('{member}/reject', [MemberAccountController::class, 'reject']);
 });
 
 Route::middleware('auth:sanctum')->get('/member/profile', [MemberController::class, 'myProfile']);

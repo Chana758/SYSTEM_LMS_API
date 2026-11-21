@@ -2,6 +2,15 @@
 
 return [
     'custom' => [
+        // Block 1: login / activation
+        'login' => ['required' => 'Please enter your email or student ID.'],
+        'student_id' => ['required' => 'Please enter your student ID.'],
+        'date_of_birth' => ['required' => 'Please enter your date of birth.'],
+        'pin' => [
+            'required' => 'Please enter a 4-digit PIN.',
+            'digits' => 'The PIN must be exactly 4 digits.',
+            'confirmed' => 'The two PINs do not match.',
+        ],
         // Shared / generic fields
         'email' => [
             'required' => 'Please enter your email address.',
