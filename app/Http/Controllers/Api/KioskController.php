@@ -56,6 +56,10 @@ class KioskController extends Controller
             'code'      => $result['code'],
             'message'   => $result['message'],
             'notice'    => $result['notice'] ?? null,
+            // Idea 3: remind at the door (books due soon, unpaid fines)
+            'reminders' => in_array($result['action'], ['out', 'not_in', 'already_in'], true)
+                ? $this->visits->reminders($card['user'])
+                : null,
             'door'      => $result['door'] ?? false,
             'person'    => [
                 'name'          => $card['user']->name,

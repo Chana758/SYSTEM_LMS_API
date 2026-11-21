@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\BorrowTransaction;
 use App\Models\KioskDevice;
 use App\Models\User;
 use App\Models\Visit;
@@ -175,6 +176,39 @@ class VisitService
         }
 
         return $closed;
+    }
+
+    /**
+     * Shown when someone scans out: books due within 2 days (or late) and unpaid fines.
+     * People forget due dates; telling them at the door is the cheapest reminder.
+     */
+    public function reminders(User $user): ?array
+    {
+        $member = $user->member;
+        if (! $member) {
+            return null;
+        }
+
+        $loans = BorrowTransaction::with('bookCopy.book:id,title')
+            ->where('member_id', $member->id)
+            ->whereIn('status', ['borrowed', 'overdue'])
+            ->where('due_date', '<=', now()->addDays(2)->endOfDay())
+            ->orderBy('due_date')
+            ->limit(5)
+            ->get()
+            ->map(fn ($b) => [
+                'title'    => $b->bookCopy?->book?->title,
+                'due_date' => $b->due_date,
+                'late'     => $b->status === 'overdue' || Carbon::parse($b->due_date)->lt(now()->startOfDay()),
+            ])->values();
+
+        $fines = (float) $member->fines()->where('fines.status', 'unpaid')->sum('fines.amount');
+
+        if ($loans->isEmpty() && $fines <= 0) {
+            return null;
+        }
+
+        return ['loans' => $loans, 'unpaid_fines_khr' => $fines];
     }
 
     /** People inside now and free seats. */

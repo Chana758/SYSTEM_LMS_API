@@ -33,6 +33,22 @@ class VisitSettings
         return max(1, (int) Setting::get('session_kiosk_days', 180));
     }
 
+    public static function voiceEnabled(): bool
+    {
+        return (bool) Setting::get('kiosk_voice_enabled', true);
+    }
+
+    /** Say the person's name (browser text-to-speech, when the tablet has a Khmer voice). */
+    public static function voiceName(): bool
+    {
+        return (bool) Setting::get('kiosk_voice_name', true);
+    }
+
+    public static function voiceVolume(): int
+    {
+        return min(100, max(0, (int) Setting::get('kiosk_voice_volume', 80)));
+    }
+
     /** Closing time on the day of $date. */
     public static function closingOn(Carbon $date): Carbon
     {
@@ -49,6 +65,9 @@ class VisitSettings
             'library_capacity'     => self::capacity(),
             'visit_rescan_seconds' => self::rescanSeconds(),
             'session_kiosk_days'   => self::kioskDays(),
+            'kiosk_voice_enabled'  => self::voiceEnabled(),
+            'kiosk_voice_name'     => self::voiceName(),
+            'kiosk_voice_volume'   => self::voiceVolume(),
         ];
     }
 

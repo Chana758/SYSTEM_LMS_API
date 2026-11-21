@@ -114,9 +114,16 @@ class KioskDeviceController extends Controller
             'library_capacity'     => ['required', 'integer', 'min:0', 'max:5000'],
             'visit_rescan_seconds' => ['required', 'integer', 'min:0', 'max:3600'],
             'session_kiosk_days'   => ['required', 'integer', 'min:1', 'max:365'],
+            'kiosk_voice_enabled'  => ['sometimes', 'boolean'],
+            'kiosk_voice_name'     => ['sometimes', 'boolean'],
+            'kiosk_voice_volume'   => ['sometimes', 'integer', 'min:0', 'max:100'],
         ]);
 
         foreach ($data as $key => $value) {
+            if (in_array($key, ['kiosk_voice_enabled', 'kiosk_voice_name'], true)) {
+                Setting::set($key, (bool) $value, 'boolean', 'visit_settings');
+                continue;
+            }
             $type = in_array($key, ['library_open_time', 'library_close_time'], true) ? 'string' : 'number';
             Setting::set($key, (string) $value, $type, 'visit_settings');
         }
