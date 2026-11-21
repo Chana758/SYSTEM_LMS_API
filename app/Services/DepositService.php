@@ -38,15 +38,15 @@ class DepositService
     }
 
     /** Staff took the deposit in cash at the desk (៛ and/or $, change in ៛). */
-    public function recordCash(Member $member, User $staff, float $receivedKhr = 0, float $receivedUsd = 0): Member
+    public function recordCash(Member $member, User $staff, float $receivedKhr = 0, float $receivedUsd = 0, string $changeIn = 'KHR'): Member
     {
-        return DB::transaction(function () use ($member, $staff, $receivedKhr, $receivedUsd) {
+        return DB::transaction(function () use ($member, $staff, $receivedKhr, $receivedUsd, $changeIn) {
             $member = Member::whereKey($member->id)->lockForUpdate()->firstOrFail();
             $this->assertUnpaid($member);
 
             app(\App\Services\Payments\PaymentService::class)->cash(
                 $member, (int) $member->user_id, 'deposit', (float) $member->deposit_amount,
-                $staff, $receivedKhr, $receivedUsd
+                $staff, $receivedKhr, $receivedUsd, $changeIn
             );
 
             $this->markPaid($member);

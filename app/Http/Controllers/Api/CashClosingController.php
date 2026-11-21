@@ -117,9 +117,10 @@ class CashClosingController extends Controller
             'received_khr'   => (float) (clone $in)->sum('cash_received_khr'),
             'received_usd'   => (float) (clone $in)->sum('cash_received_usd'),
             'change_khr'     => (float) (clone $in)->sum('change_khr'),
+            'change_usd'     => (float) (clone $in)->sum('change_usd'),
             'refunded_khr'   => $outKhr,
             'expected_khr'   => round($inKhr - $outKhr),
-            'expected_usd'   => round((float) (clone $in)->sum('cash_received_usd'), 2),
+            'expected_usd'   => round((float) (clone $in)->sum('cash_received_usd') - (float) (clone $in)->sum('change_usd'), 2),
         ];
     }
 

@@ -118,6 +118,7 @@ class PaymentController extends Controller
             'cash_received_khr' => (float) $payment->cash_received_khr,
             'cash_received_usd' => (float) $payment->cash_received_usd,
             'change_khr'        => (float) $payment->change_khr,
+            'change_usd'        => (float) $payment->change_usd,
             'created_at'        => $payment->created_at,
         ]);
     }

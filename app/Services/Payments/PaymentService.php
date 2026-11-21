@@ -168,9 +168,9 @@ class PaymentService
      * Cash at the desk for a fine (B5.4). Received in Riel and/or Dollars;
      * nothing entered = the exact amount in Riel.
      */
-    public function recordCash(Fine $fine, User $staff, float $receivedKhr = 0, float $receivedUsd = 0): Payment
+    public function recordCash(Fine $fine, User $staff, float $receivedKhr = 0, float $receivedUsd = 0, string $changeIn = 'KHR'): Payment
     {
-        return DB::transaction(function () use ($fine, $staff, $receivedKhr, $receivedUsd) {
+        return DB::transaction(function () use ($fine, $staff, $receivedKhr, $receivedUsd, $changeIn) {
             $fine = Fine::whereKey($fine->id)->lockForUpdate()->firstOrFail();
 
             if ($fine->status !== 'unpaid') {
@@ -179,7 +179,7 @@ class PaymentService
 
             $payment = $this->cash(
                 $fine, (int) ($fine->borrow?->member?->user_id ?? $staff->id), 'fine',
-                (float) $fine->amount, $staff, $receivedKhr, $receivedUsd
+                (float) $fine->amount, $staff, $receivedKhr, $receivedUsd, $changeIn
             );
 
             $fine->update(['status' => 'paid', 'paid_at' => now(), 'payment_method' => 'cash']);
@@ -190,9 +190,10 @@ class PaymentService
 
     /**
      * One cash payment row. The amount owed comes from the database; the cash received
-     * (៛ and/or $ at today's rate) must cover it; change is given in Riel, rounded down to 100៛.
+     * (៛ and/or $ at today's rate) must cover it. Change: all in Riel (rounded down to 100៛),
+     * or $changeIn = 'USD': whole dollars first, the rest in Riel.
      */
-    public function cash($payable, int $ownerId, string $purpose, float $amountKhr, User $staff, float $receivedKhr = 0, float $receivedUsd = 0): Payment
+    public function cash($payable, int $ownerId, string $purpose, float $amountKhr, User $staff, float $receivedKhr = 0, float $receivedUsd = 0, string $changeIn = 'KHR'): Payment
     {
         $receivedKhr = max(0, round($receivedKhr));
         $receivedUsd = max(0, round($receivedUsd, 2));
@@ -214,7 +215,7 @@ class PaymentService
             ])]);
         }
 
-        $change = floor(($totalKhr - $amountKhr) / 100) * 100;
+        [$changeKhr, $changeUsd] = self::splitChange($totalKhr - $amountKhr, $rate, $changeIn);
 
         return Payment::create([
             'tran_id'           => $this->newTranId(),
@@ -228,7 +229,8 @@ class PaymentService
             'exchange_rate'     => $receivedUsd > 0 ? $rate : null,
             'cash_received_khr' => $receivedKhr,
             'cash_received_usd' => $receivedUsd,
-            'change_khr'        => $change,
+            'change_khr'        => $changeKhr,
+            'change_usd'        => $changeUsd,
             'method'            => 'cash',
             'provider'          => 'desk',
             'status'            => Payment::PAID,
@@ -310,6 +312,24 @@ class PaymentService
     }
 
     /** 20 characters max (PayWay): "LIB" + yymmddHHMMSS + 5 random. */
+    /**
+     * Change owed (in Riel) -> [riel, dollars].
+     * KHR: all Riel, rounded down to 100. USD: whole dollars, then the rest in Riel.
+     */
+    public static function splitChange(float $changeKhr, float $rate, string $changeIn = 'KHR'): array
+    {
+        $changeKhr = max(0, $changeKhr);
+
+        if (strtoupper($changeIn) === 'USD' && $rate > 0) {
+            $usd = floor(($changeKhr + 0.5) / $rate);
+            $rest = floor(($changeKhr - $usd * $rate) / 100) * 100;
+
+            return [max(0, $rest), $usd];
+        }
+
+        return [floor($changeKhr / 100) * 100, 0];
+    }
+
     public function newTranId(): string
     {
         do {

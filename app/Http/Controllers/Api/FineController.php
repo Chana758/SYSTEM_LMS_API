@@ -82,11 +82,13 @@ class FineController extends Controller
             'payment_method' => ['nullable', 'in:cash'],
             'received_khr'   => ['nullable', 'numeric', 'min:0'],
             'received_usd'   => ['nullable', 'numeric', 'min:0'],
+            'change_in'      => ['nullable', 'in:KHR,USD'],
         ]);
 
         $payment = $payments->recordCash(
             $fine, $request->user(),
-            (float) ($data['received_khr'] ?? 0), (float) ($data['received_usd'] ?? 0)
+            (float) ($data['received_khr'] ?? 0), (float) ($data['received_usd'] ?? 0),
+            $data['change_in'] ?? 'KHR'
         );
 
         $fine = $fine->fresh()->load('borrow.member.user', 'borrow.bookCopy.book');
@@ -102,6 +104,7 @@ class FineController extends Controller
             'data' => $fine,
             'payment_id' => $payment->id,
             'change_khr' => (float) $payment->change_khr,
+            'change_usd' => (float) $payment->change_usd,
         ]);
     }
 

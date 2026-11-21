@@ -43,11 +43,13 @@ class DepositController extends Controller
         $data = $request->validate([
             'received_khr' => ['nullable', 'numeric', 'min:0'],
             'received_usd' => ['nullable', 'numeric', 'min:0'],
+            'change_in'    => ['nullable', 'in:KHR,USD'],
         ]);
 
         $member = $this->deposits->recordCash(
             $member, $request->user(),
-            (float) ($data['received_khr'] ?? 0), (float) ($data['received_usd'] ?? 0)
+            (float) ($data['received_khr'] ?? 0), (float) ($data['received_usd'] ?? 0),
+            $data['change_in'] ?? 'KHR'
         );
 
         return response()->json(['message' => __('payments.DEPOSIT_CASH_RECORDED')] + $this->present($member));
