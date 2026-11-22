@@ -246,9 +246,22 @@ class AuthController extends Controller
                     : $q->whereIn('name', ['member', 'librarian']);
             });
 
-        return response()->json(
-            $query->latest()->paginate($request->get('per_page', 15))
-        );
+        // Search by name, email, membership number or student ID (the queue can hold hundreds after an import)
+        if ($search = trim((string) $request->get('search', ''))) {
+            $like = '%' . $search . '%';
+            $query->where(function ($q) use ($like) {
+                $q->where('name', 'ilike', $like)
+                    ->orWhere('email', 'ilike', $like)
+                    ->orWhereHas('member', fn ($m) => $m->where('membership_no', 'ilike', $like)
+                        ->orWhere('student_id', 'ilike', $like)
+                        ->orWhere('name_en', 'ilike', $like))
+                    ->orWhereHas('librarian', fn ($l) => $l->where('employee_id', 'ilike', $like));
+            });
+        }
+
+        $perPage = min(100, max(5, (int) $request->get('per_page', 15)));
+
+        return response()->json($query->latest()->paginate($perPage));
     }
 
     /** GET /auth/qr-token/status (self): check whether my QR card is still valid. */
