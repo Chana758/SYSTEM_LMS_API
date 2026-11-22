@@ -17,6 +17,8 @@ class Member extends Model
         'user_id',
         'membership_no',
         'student_id',
+        'name_en',
+        'gender',
         'date_of_birth',
         'class_name',
         'deposit_amount',

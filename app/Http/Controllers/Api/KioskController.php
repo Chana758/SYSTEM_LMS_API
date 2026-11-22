@@ -63,6 +63,7 @@ class KioskController extends Controller
             'door'      => $result['door'] ?? false,
             'person'    => [
                 'name'          => $card['user']->name,
+                'name_en'       => $card['user']->member?->name_en,
                 'avatar'        => $card['user']->avatar,
                 'membership_no' => $card['user']->member?->membership_no,
                 'class_name'    => $card['user']->member?->class_name,

@@ -223,6 +223,8 @@ class MemberAccountController extends Controller
                     'user_id'          => $user->id,
                     'membership_no'    => $this->generateMembershipNo(),
                     'student_id'       => $d['student_id'],
+                    'name_en'          => $d['name_en'] ?: null,
+                    'gender'           => $d['gender'],
                     'date_of_birth'    => $d['date_of_birth'],
                     'class_name'       => $d['class_name'] ?: null,
                     'membership_type'  => $d['membership_type'],
@@ -250,12 +252,26 @@ class MemberAccountController extends Controller
         return [
             'student_id'      => $get('student_id'),
             'name'            => $get('name'),
+            'name_en'         => $get('name_en'),
+            'gender'          => $this->parseGender($get('gender')),
             'class_name'      => $get('class_name'),
             'date_of_birth'   => $this->parseDate($raw['date_of_birth'] ?? null),
             'membership_type' => strtolower($get('membership_type')) ?: 'student',
             'phone'           => $get('phone'),
             'email'           => strtolower($get('email')),
         ];
+    }
+
+    /** ប្រុស/ស្រី, M/F, male/female, boy/girl -> male | female | null */
+    private function parseGender(string $value): ?string
+    {
+        $v = mb_strtolower(trim($value));
+
+        return match (true) {
+            in_array($v, ['ប្រុស', 'm', 'male', 'boy', 'b'], true)    => 'male',
+            in_array($v, ['ស្រី', 'f', 'female', 'girl', 'g'], true) => 'female',
+            default                                                   => null,
+        };
     }
 
     private function parseDate($value): ?string

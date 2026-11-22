@@ -23,7 +23,7 @@ class VisitController extends Controller
 
         $query = Visit::with([
             'user:id,name,avatar',
-            'member:id,membership_no,class_name',
+            'member:id,membership_no,class_name,name_en',
             'kioskDevice:id,name',
         ])->whereBetween('check_in_at', [$from, $to]);
 
@@ -40,7 +40,8 @@ class VisitController extends Controller
             $query->where(function ($q) use ($term) {
                 $q->whereRaw('LOWER(guest_name) LIKE ?', [$term])
                     ->orWhereHas('user', fn ($u) => $u->whereRaw('LOWER(name) LIKE ?', [$term]))
-                    ->orWhereHas('member', fn ($m) => $m->whereRaw('LOWER(membership_no) LIKE ?', [$term]));
+                    ->orWhereHas('member', fn ($m) => $m->whereRaw('LOWER(membership_no) LIKE ?', [$term])
+                        ->orWhereRaw('LOWER(name_en) LIKE ?', [$term]));
             });
         }
 
@@ -123,6 +124,7 @@ class VisitController extends Controller
 
         return response()->json($cards->digitalCode($user) + [
             'name'          => $user->name,
+            'name_en'       => $user->member?->name_en,
             'membership_no' => $user->member?->membership_no,
             'student_id'    => $user->member?->student_id,
             'class_name'    => $user->member?->class_name,

@@ -23,6 +23,8 @@ class MemberController extends Controller
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('membership_no', 'ilike', "%{$search}%")
+                  ->orWhere('name_en', 'ilike', "%{$search}%")
+                  ->orWhere('student_id', 'ilike', "%{$search}%")
                   ->orWhereHas('user', function ($uq) use ($search) {
                       $uq->where('name', 'ilike', "%{$search}%")
                          ->orWhere('email', 'ilike', "%{$search}%");
@@ -65,6 +67,11 @@ class MemberController extends Controller
                 'membership_no'     => $this->generateMembershipNo(),
                 'identity_card_no'  => $validated['identity_card_no'] ?? null,
                 'emergency_contact' => $validated['emergency_contact'] ?? null,
+                'name_en'           => $validated['name_en'] ?? null,
+                'gender'            => $validated['gender'] ?? null,
+                'student_id'        => $validated['student_id'] ?? null,
+                'class_name'        => $validated['class_name'] ?? null,
+                'date_of_birth'     => $validated['date_of_birth'] ?? null,
                 'membership_type'   => $validated['membership_type'],
                 'max_borrow_limit'  => $validated['max_borrow_limit'] ?? 3,
                 'address'           => $validated['address'] ?? null,

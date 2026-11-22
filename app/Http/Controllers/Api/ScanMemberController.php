@@ -57,6 +57,8 @@ class ScanMemberController extends Controller
             'member' => [
                 'id'              => $member->id,
                 'name'            => $member->user?->name,
+                'name_en'         => $member->name_en,
+                'gender'          => $member->gender,
                 'avatar'          => $member->user?->avatar,
                 'membership_no'   => $member->membership_no,
                 'student_id'      => $member->student_id,
