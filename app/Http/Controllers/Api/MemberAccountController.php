@@ -7,6 +7,7 @@ use App\Models\Member;
 use App\Models\MembershipType;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\LoginLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -143,6 +144,7 @@ class MemberAccountController extends Controller
         }
 
         $temporary = $this->temporaryPassword();
+        $wasInactive = $user->status === 'inactive';
 
         $user->forceFill([
             'password'             => Hash::make($temporary),
@@ -155,6 +157,16 @@ class MemberAccountController extends Controller
         ])->save();
 
         $user->tokens()->delete();
+
+        // Audit: which staff member activated / reset this account (shown in Login history)
+        $staff = $request->user();
+        LoginLogger::record(
+            $wasInactive ? 'staff_activate' : 'staff_reset',
+            $user,
+            true,
+            null,
+            'by ' . $staff->name . ' <' . $staff->email . '>',
+        );
 
         return response()->json([
             'message'            => __('account.CREDENTIALS_RESET'),
