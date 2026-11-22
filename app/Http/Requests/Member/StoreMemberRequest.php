@@ -28,6 +28,7 @@ class StoreMemberRequest extends FormRequest
             'status'            => ['nullable', 'string', 'in:active,inactive,expired'],
             'name_en'           => ['nullable', 'string', 'max:120'],
             'gender'            => ['nullable', 'in:male,female'],
+            'has_school_card'   => ['sometimes', 'boolean'],
             'student_id'        => ['nullable', 'string', 'max:30', 'unique:members,student_id'],
             'class_name'        => ['nullable', 'string', 'max:30'],
             'date_of_birth'     => ['nullable', 'date', 'before:today'],

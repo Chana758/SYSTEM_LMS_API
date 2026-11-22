@@ -73,6 +73,7 @@ class AuthController extends Controller
             Member::create([
                 'user_id'          => $user->id,
                 'membership_no'    => $this->generateMembershipNo(),
+                'source'           => 'register',
                 'membership_type'  => 'student', // staff change it after checking ID
                 'max_borrow_limit' => 3,
                 'join_date'        => now(),
@@ -245,6 +246,15 @@ class AuthController extends Controller
                     ? $q->where('name', 'member')
                     : $q->whereIn('name', ['member', 'librarian']);
             });
+
+        // Who still needs a library card: by default skip people who already hold
+        // the university card (when the kiosk accepts it). ?filter=school|all to see the others.
+        $filter = $request->get('filter', 'need');
+        if ($filter === 'need') {
+            $query->whereDoesntHave('member', fn ($m) => $m->where('has_school_card', true));
+        } elseif ($filter === 'school') {
+            $query->whereHas('member', fn ($m) => $m->where('has_school_card', true));
+        }
 
         // Search by name, email, membership number or student ID (the queue can hold hundreds after an import)
         if ($search = trim((string) $request->get('search', ''))) {

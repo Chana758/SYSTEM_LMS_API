@@ -15,8 +15,10 @@ class Member extends Model
 
     protected $fillable = [
         'user_id',
+        'source',
         'membership_no',
         'student_id',
+        'has_school_card',
         'name_en',
         'gender',
         'date_of_birth',
@@ -42,6 +44,7 @@ class Member extends Model
         'join_date'   => 'date:Y-m-d',
         'expiry_date' => 'date:Y-m-d',
         'date_of_birth' => 'date:Y-m-d',
+        'has_school_card' => 'boolean',
         'deposit_amount' => 'decimal:2',
         'deposit_deducted' => 'decimal:2',
         'deposit_refunded' => 'decimal:2',

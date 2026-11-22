@@ -36,6 +36,14 @@ class MemberController extends Controller
             $query->where('status', $request->input('status'));
         }
 
+        if ($request->filled('source')) {
+            $query->where('source', $request->input('source'));
+        }
+
+        if ($request->filled('school_card')) {
+            $query->where('has_school_card', $request->boolean('school_card'));
+        }
+
         if ($request->filled('membership_type')) {
             $query->where('membership_type', $request->input('membership_type'));
         }
@@ -70,6 +78,8 @@ class MemberController extends Controller
                 'name_en'           => $validated['name_en'] ?? null,
                 'gender'            => $validated['gender'] ?? null,
                 'student_id'        => $validated['student_id'] ?? null,
+                'source'            => 'staff',
+                'has_school_card'   => (bool) ($validated['has_school_card'] ?? false),
                 'class_name'        => $validated['class_name'] ?? null,
                 'date_of_birth'     => $validated['date_of_birth'] ?? null,
                 'membership_type'   => $validated['membership_type'],

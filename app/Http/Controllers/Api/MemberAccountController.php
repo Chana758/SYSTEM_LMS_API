@@ -241,6 +241,8 @@ class MemberAccountController extends Controller
                     'user_id'          => $user->id,
                     'membership_no'    => $numbers[$i],
                     'student_id'       => $d['student_id'],
+                    'source'           => 'import',
+                    'has_school_card'  => $d['has_school_card'],
                     'name_en'          => $d['name_en'] ?: null,
                     'gender'           => $d['gender'],
                     'date_of_birth'    => $d['date_of_birth'],
@@ -272,6 +274,9 @@ class MemberAccountController extends Controller
             'name'            => $get('name'),
             'name_en'         => $get('name_en'),
             'gender'          => $this->parseGender($get('gender')),
+            // A university list = enrolled students, who hold its card. Empty means yes;
+            // write "no" for students still waiting for their card (they get a library card).
+            'has_school_card' => $this->parseYesNo($get('school_card'), true),
             'class_name'      => $get('class_name'),
             'date_of_birth'   => $this->parseDate($raw['date_of_birth'] ?? null),
             'membership_type' => strtolower($get('membership_type')) ?: 'student',
@@ -281,6 +286,20 @@ class MemberAccountController extends Controller
     }
 
     /** ប្រុស/ស្រី, M/F, male/female, boy/girl -> male | female | null */
+    /** yes/no in English or Khmer; an empty cell gives $default. */
+    private function parseYesNo(string $value, bool $default): bool
+    {
+        $v = mb_strtolower(trim($value));
+        if ($v === '') {
+            return $default;
+        }
+        if (in_array($v, ['no', 'n', 'false', '0', 'គ្មាន', 'អត់', 'អត់មាន', 'មិនមាន', 'ទេ'], true)) {
+            return false;
+        }
+
+        return true; // yes, y, 1, មាន, or a card number
+    }
+
     private function parseGender(string $value): ?string
     {
         $v = mb_strtolower(trim($value));

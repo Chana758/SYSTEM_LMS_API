@@ -74,8 +74,11 @@ class MemberCardService
             return null;
         }
 
+        // Only members marked as holding the university card: a student still waiting
+        // for theirs cannot be let in by someone else printing a QR of their ID.
         $member = Member::with('user.role', 'user.member')
             ->whereRaw('UPPER(student_id) = ?', [strtoupper($id)])
+            ->where('has_school_card', true)
             ->first();
 
         return $member?->user ? ['user' => $member->user, 'method' => 'school_card'] : null;

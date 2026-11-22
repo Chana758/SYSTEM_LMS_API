@@ -30,6 +30,7 @@ class UpdateMemberRequest extends FormRequest
             'remarks'           => ['nullable', 'string'],
             'name_en'           => ['nullable', 'string', 'max:120'],
             'gender'            => ['nullable', 'in:male,female'],
+            'has_school_card'   => ['sometimes', 'boolean'],
             'student_id'        => ['nullable', 'string', 'max:30', Rule::unique('members', 'student_id')->ignore($this->route('member')?->id)],
             'class_name'        => ['nullable', 'string', 'max:30'],
             'date_of_birth'     => ['nullable', 'date', 'before:today'],
