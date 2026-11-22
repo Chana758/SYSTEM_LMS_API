@@ -2,13 +2,19 @@
 
 namespace App\Services;
 
+use App\Models\Member;
 use App\Models\User;
+use App\Support\VisitSettings;
 
 /**
  * Reads what a kiosk scanned. Two kinds of code are accepted:
  *  - printed card: the 48-character token issued by staff (only its SHA-256 is stored);
  *  - digital card: "SNX1.<user id>.<expires unix>.<signature>", shown in the app and
- *    renewed every minute, so a photo or screenshot stops working quickly.
+ *    renewed every minute, so a photo or screenshot stops working quickly;
+ *  - school ID card (when turned on in settings): the QR the school already prints,
+ *    holding the student ID as plain text or inside a link. Anyone who knows a student
+ *    ID can copy it, so it is accepted for entry and desk loans (staff see the photo),
+ *    never for logging in.
  */
 class MemberCardService
 {
@@ -25,16 +31,12 @@ class MemberCardService
             return $this->resolveDigital($code);
         }
 
-        if (strlen($code) < 20 || strlen($code) > 100) {
-            return ['error' => 'CARD_UNKNOWN'];
-        }
-
-        $user = User::with('role', 'member')
-            ->where('qr_login_token', hash('sha256', $code))
-            ->first();
+        $user = (strlen($code) >= 20 && strlen($code) <= 100)
+            ? User::with('role', 'member')->where('qr_login_token', hash('sha256', $code))->first()
+            : null;
 
         if (! $user) {
-            return ['error' => 'CARD_UNKNOWN'];
+            return $this->resolveSchoolCard($code) ?? ['error' => 'CARD_UNKNOWN'];
         }
 
         if (! $user->qr_login_token_expires_at || $user->qr_login_token_expires_at->isPast()) {
@@ -42,6 +44,41 @@ class MemberCardService
         }
 
         return ['user' => $user, 'method' => 'card'];
+    }
+
+    /**
+     * The student ID inside a school card QR: plain "ST-2024-0012", or a link such as
+     * "https://school.edu.kh/student/ST-2024-0012" or "...?student_id=ST-2024-0012".
+     */
+    public static function schoolId(string $code): ?string
+    {
+        $code = trim($code);
+
+        if (preg_match('#^https?://#i', $code)) {
+            $parts = parse_url($code) ?: [];
+            parse_str($parts['query'] ?? '', $query);
+            $code = (string) ($query['student_id'] ?? $query['sid'] ?? $query['id'] ?? '');
+            if ($code === '') {
+                $segments = array_values(array_filter(explode('/', $parts['path'] ?? '')));
+                $code = (string) (end($segments) ?: '');
+            }
+            $code = rawurldecode($code);
+        }
+
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9._\-\/]{2,39}$/', $code) ? $code : null;
+    }
+
+    private function resolveSchoolCard(string $code): ?array
+    {
+        if (! VisitSettings::schoolCardEnabled() || ! ($id = self::schoolId($code))) {
+            return null;
+        }
+
+        $member = Member::with('user.role', 'user.member')
+            ->whereRaw('UPPER(student_id) = ?', [strtoupper($id)])
+            ->first();
+
+        return $member?->user ? ['user' => $member->user, 'method' => 'school_card'] : null;
     }
 
     /** A fresh digital code for the member's phone. */

@@ -117,10 +117,11 @@ class KioskDeviceController extends Controller
             'kiosk_voice_enabled'  => ['sometimes', 'boolean'],
             'kiosk_voice_name'     => ['sometimes', 'boolean'],
             'kiosk_voice_volume'   => ['sometimes', 'integer', 'min:0', 'max:100'],
+            'school_card_enabled'  => ['sometimes', 'boolean'],
         ]);
 
         foreach ($data as $key => $value) {
-            if (in_array($key, ['kiosk_voice_enabled', 'kiosk_voice_name'], true)) {
+            if (in_array($key, ['kiosk_voice_enabled', 'kiosk_voice_name', 'school_card_enabled'], true)) {
                 Setting::set($key, (bool) $value, 'boolean', 'visit_settings');
                 continue;
             }

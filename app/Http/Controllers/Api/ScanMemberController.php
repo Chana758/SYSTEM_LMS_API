@@ -39,9 +39,10 @@ class ScanMemberController extends Controller
         } elseif (($card['error'] ?? null) === 'DIGITAL_CODE_EXPIRED') {
             return $this->refuse('DIGITAL_CODE_EXPIRED', __('visits.DIGITAL_CODE_EXPIRED'), $code);
         } else {
-            // Typed by hand: membership number or student ID
+            // Typed by hand: membership number or student ID (also a school card link)
+            $studentId = MemberCardService::schoolId($code) ?? $code;
             $member = Member::whereRaw('UPPER(membership_no) = ?', [strtoupper($code)])
-                ->orWhere('student_id', $code)
+                ->orWhereRaw('UPPER(student_id) = ?', [strtoupper($studentId)])
                 ->first();
         }
 

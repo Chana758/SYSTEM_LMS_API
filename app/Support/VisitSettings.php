@@ -49,6 +49,12 @@ class VisitSettings
         return min(100, max(0, (int) Setting::get('kiosk_voice_volume', 80)));
     }
 
+    /** Accept the QR on the school's own student card (student ID). */
+    public static function schoolCardEnabled(): bool
+    {
+        return (bool) Setting::get('school_card_enabled', false);
+    }
+
     /** Closing time on the day of $date. */
     public static function closingOn(Carbon $date): Carbon
     {
@@ -68,6 +74,7 @@ class VisitSettings
             'kiosk_voice_enabled'  => self::voiceEnabled(),
             'kiosk_voice_name'     => self::voiceName(),
             'kiosk_voice_volume'   => self::voiceVolume(),
+            'school_card_enabled'  => self::schoolCardEnabled(),
         ];
     }
 

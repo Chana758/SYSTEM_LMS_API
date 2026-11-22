@@ -10,6 +10,7 @@ return [
     'CARD_UNKNOWN'         => 'This card is not recognised. Please see the librarian.',
     'CARD_EXPIRED'         => 'This card has expired. Please get a new one at the desk.',
     'DIGITAL_CODE_EXPIRED' => 'The QR on your phone has expired. Please open your card again.',
+    'MEMBER_INACTIVE'      => 'This library membership is not active. Please see the librarian.',
     'ACCOUNT_PENDING'      => 'Your account is waiting for approval. Please see the librarian.',
     'MEMBERSHIP_EXPIRED'   => 'Your membership has expired. Please renew it at the desk.',
     'NOT_A_KIOSK'          => 'This account is not a registered kiosk.',

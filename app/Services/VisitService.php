@@ -236,7 +236,13 @@ class VisitService
             return ['code' => 'CARD_UNKNOWN', 'message' => __('visits.CARD_UNKNOWN')];
         }
 
-        if ($user->status === 'inactive') {
+        // Library membership decides entry, not the app account: an imported student who
+        // has not activated the app (user "inactive") may still come in with a card.
+        if ($role === 'member' && $user->member) {
+            if ($user->member->status !== 'active') {
+                return ['code' => 'MEMBER_INACTIVE', 'message' => __('visits.MEMBER_INACTIVE')];
+            }
+        } elseif ($user->status === 'inactive') {
             return ['code' => 'ACCOUNT_NOT_ACTIVATED', 'message' => __('account.ACCOUNT_NOT_ACTIVATED')];
         }
 
