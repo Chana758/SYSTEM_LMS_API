@@ -22,4 +22,6 @@ return [
     'RESET_ONLY_MEMBERS'         => 'Librarians can only reset member accounts.',
     'MUST_CHANGE_PASSWORD'       => 'Please change your password first.',
     'IMPORT_DONE'                => 'Imported :count accounts.',
+    'PIN_TOO_SIMPLE' => 'This PIN is too easy to guess. Choose another.',
+    'PIN_SAVED'      => 'PIN saved. You can now borrow at the self-checkout kiosk.',
 ];

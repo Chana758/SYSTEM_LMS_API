@@ -3,6 +3,7 @@
 return [
     'WELCOME'              => 'សូមស្វាគមន៍ :name!',
     'GOODBYE'              => 'លាហើយ :name។ អ្នកនៅបណ្ណាល័យ :minutes នាទី។',
+    'USE_SELF_CHECKOUT'    => 'Kiosk នេះសម្រាប់ខ្ចីសៀវភៅដោយខ្លួនឯងប៉ុណ្ណោះ។',
     'ALREADY_IN'           => ':name អ្នកបាន Check-in រួចហើយ។',
     'NOT_IN'               => ':name អ្នកមិនទាន់បាន Check-in ទេ។ ទ្វារបើកឲ្យចេញ។',
     'GUEST_WELCOME'        => 'សូមស្វាគមន៍ :name! សូមចុច "ភ្ញៀវចេញ" ពេលចាកចេញ។',

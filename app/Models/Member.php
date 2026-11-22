@@ -30,6 +30,7 @@ class Member extends Model
         'deposit_refunded',
         'deposit_refunded_at',
         'identity_card_no',
+        'id_document',
         'emergency_contact',
         'membership_type',
         'max_borrow_limit',
@@ -39,6 +40,16 @@ class Member extends Model
         'status',
         'remarks',
     ];
+
+    // The ID photo is only served to staff through its own endpoint.
+    protected $hidden = ['id_document'];
+
+    protected $appends = ['has_id_document'];
+
+    public function getHasIdDocumentAttribute(): bool
+    {
+        return ! empty($this->attributes['id_document'] ?? null);
+    }
 
     protected $casts = [
         'join_date'   => 'date:Y-m-d',

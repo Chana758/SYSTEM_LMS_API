@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Member;
+use App\Http\Requests\MembershipType\MembershipTypeRequest;
 use App\Models\MembershipType;
 use Illuminate\Http\Request;
 
@@ -22,13 +23,9 @@ class MembershipTypeController extends Controller
     }
 
     /** Create a membership type with a unique code. */
-    public function store(Request $request)
+    public function store(MembershipTypeRequest $request)
     {
-        $validated = $request->validate([
-            'code'        => ['required', 'string', 'max:50', 'alpha_dash', 'unique:membership_types,code'],
-            'label'       => ['required', 'string', 'max:100'],
-            'description' => ['nullable', 'string'],
-        ]);
+        $validated = $request->validated();
 
         $type = MembershipType::create($validated);
 
@@ -39,13 +36,10 @@ class MembershipTypeController extends Controller
     }
 
     /** Update label, description and active status (code is not changeable). */
-    public function update(Request $request, MembershipType $membershipType)
+    public function update(MembershipTypeRequest $request, MembershipType $membershipType)
     {
-        $validated = $request->validate([
-            'label'       => ['required', 'string', 'max:100'],
-            'description' => ['nullable', 'string'],
-            'is_active'   => ['sometimes', 'boolean'],
-        ]);
+        // The code is the key members point to, so it never changes.
+        $validated = collect($request->validated())->except('code')->all();
 
         $membershipType->update($validated);
 

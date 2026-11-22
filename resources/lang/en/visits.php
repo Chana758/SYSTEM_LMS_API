@@ -3,6 +3,7 @@
 return [
     'WELCOME'              => 'Welcome, :name!',
     'GOODBYE'              => 'Goodbye, :name. You were in the library for :minutes minutes.',
+    'USE_SELF_CHECKOUT'    => 'This kiosk is for self-checkout only.',
     'ALREADY_IN'           => ':name, you are already checked in.',
     'NOT_IN'               => ':name, you were not checked in. The door is open for you to leave.',
     'GUEST_WELCOME'        => 'Welcome, :name! Please tap "Guest leaving" when you go.',

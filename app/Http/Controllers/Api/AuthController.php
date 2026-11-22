@@ -22,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -60,7 +61,9 @@ class AuthController extends Controller
         // A1: new accounts wait for staff approval (can browse, cannot borrow/reserve).
         $status = AuthSettings::registrationRequiresApproval() ? 'pending' : 'active';
 
-        $user = DB::transaction(function () use ($validated, $memberRole, $status) {
+        $external = ($validated['origin'] ?? null) === 'external';
+
+        $user = DB::transaction(function () use ($validated, $memberRole, $status, $external) {
             $user = User::create([
                 'name'     => $validated['name'],
                 'email'    => strtolower($validated['email']),
@@ -74,7 +77,9 @@ class AuthController extends Controller
                 'user_id'          => $user->id,
                 'membership_no'    => $this->generateMembershipNo(),
                 'source'           => 'register',
-                'membership_type'  => 'student', // staff change it after checking ID
+                // Saying "external" never gives more rights, so it is taken at once.
+                // "From this school" stays a claim until staff check the ID card.
+                'membership_type'  => $external ? 'external' : 'student',
                 'max_borrow_limit' => 3,
                 'join_date'        => now(),
                 'status'           => 'active',
@@ -82,6 +87,19 @@ class AuthController extends Controller
 
             return $user;
         });
+
+        $member = $user->member()->first();
+
+        if ($request->hasFile('id_document') && $member) {
+            // Private disk: never reachable by URL, staff stream it through the API.
+            $path = $request->file('id_document')->store('id-documents', 'local');
+            $member->forceFill(['id_document' => $path])->save();
+        }
+
+        // External: ask for the deposit now, so it can be paid by KHQR while waiting.
+        if ($external && $member) {
+            app(\App\Services\DepositService::class)->require($member);
+        }
 
         $message = $status === 'pending' ? __('account.REGISTERED_PENDING') : 'User registered successfully';
 
@@ -343,6 +361,33 @@ class AuthController extends Controller
      * ----------------- */
 
     /** POST /auth/change-password: set a new password and sign out all other devices. */
+    /** POST /auth/pin: a member sets or changes the 4-digit PIN for the self-checkout kiosk. */
+    public function setPin(Request $request)
+    {
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'pin'              => ['required', 'digits:4', 'confirmed'],
+        ]);
+
+        $user = $request->user();
+
+        if (! Hash::check($data['current_password'], $user->password)) {
+            throw ValidationException::withMessages(['current_password' => __('account.WRONG_PASSWORD')]);
+        }
+
+        if (in_array($data['pin'], ['0000', '1111', '1234', '4321', '9999'], true)) {
+            throw ValidationException::withMessages(['pin' => __('account.PIN_TOO_SIMPLE')]);
+        }
+
+        $user->forceFill([
+            'pin'                 => Hash::make($data['pin']),
+            'pin_failed_attempts' => 0,
+            'pin_locked_until'    => null,
+        ])->save();
+
+        return response()->json(['message' => __('account.PIN_SAVED'), 'has_pin' => true]);
+    }
+
     public function changePassword(ChangePasswordRequest $request)
     {
         $user = $request->user();

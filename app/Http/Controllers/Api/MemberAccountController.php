@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Concerns\ToArray;
@@ -28,8 +29,11 @@ class MemberAccountController extends Controller
     /** GET /member-accounts/pending: registrations waiting for approval. */
     public function pending(Request $request)
     {
+        // Ready first: deposit already paid (KHQR), then those who sent an ID photo, then oldest.
         $members = Member::with('user')
             ->whereHas('user', fn ($q) => $q->where('status', 'pending'))
+            ->orderByRaw("CASE WHEN deposit_status = 'paid' THEN 0 ELSE 1 END")
+            ->orderByRaw('CASE WHEN id_document IS NULL THEN 1 ELSE 0 END')
             ->oldest()
             ->paginate($request->input('per_page', 15));
 
@@ -65,6 +69,14 @@ class MemberAccountController extends Controller
             $member->user->forceFill(['status' => 'active'])->save();
         });
 
+        // Said "external" at sign-up but staff found they are a student: no deposit owed.
+        $member = $member->fresh();
+        if ($member->deposit_status === 'unpaid' && (int) $type->deposit_amount === 0) {
+            $member->update(['deposit_status' => 'none', 'deposit_amount' => 0]);
+        }
+
+        $this->forgetIdDocument($member);
+
         // B6.2: external (or any type with a deposit) must pay before borrowing.
         $deposits = app(\App\Services\DepositService::class);
         $member = $deposits->require($member->fresh());
@@ -78,6 +90,27 @@ class MemberAccountController extends Controller
         ]);
     }
 
+    /** GET /member-accounts/{member}/id-document: the ID photo sent at sign-up (staff only). */
+    public function idDocument(Member $member)
+    {
+        $path = $member->getRawOriginal('id_document');
+        abort_unless($path && Storage::disk('local')->exists($path), 404);
+
+        return Storage::disk('local')->response($path, null, [
+            'Cache-Control' => 'private, no-store',
+        ]);
+    }
+
+    /** The ID photo is only needed to decide; it is deleted once staff approve or reject. */
+    private function forgetIdDocument(Member $member): void
+    {
+        $path = $member->getRawOriginal('id_document');
+        if ($path) {
+            Storage::disk('local')->delete($path);
+            $member->forceFill(['id_document' => null])->saveQuietly();
+        }
+    }
+
     /** POST /member-accounts/{member}/reject: remove a registration that can't be verified. */
     public function reject(Request $request, Member $member)
     {
@@ -86,6 +119,8 @@ class MemberAccountController extends Controller
         if ($member->user?->status !== 'pending') {
             return response()->json(['message' => __('account.NOT_PENDING')], 422);
         }
+
+        $this->forgetIdDocument($member);
 
         DB::transaction(function () use ($member, $data) {
             $member->update(['remarks' => trim('Rejected: ' . ($data['reason'] ?? ''))]);

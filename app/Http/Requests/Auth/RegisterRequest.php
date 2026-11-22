@@ -28,6 +28,11 @@ class RegisterRequest extends FormRequest
             'email'             => ['required', 'email', 'max:255', 'unique:users,email'],
             'password'          => ['required', 'confirmed', 'min:8'],
             'phone'             => ['required', 'string', 'max:20'],
+            // "school" = says they belong to this institution (staff still check),
+            // "external" = from outside: deposit is asked for right away.
+            'origin'            => ['nullable', 'in:school,external'],
+            // Photo of the national ID / student card, only for staff while approving.
+            'id_document'       => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp,heic,heif', 'max:6144'],
         ];
     }
 

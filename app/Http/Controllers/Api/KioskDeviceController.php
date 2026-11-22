@@ -137,7 +137,7 @@ class KioskDeviceController extends Controller
         return $request->validate([
             'name'          => ['required', 'string', 'max:100'],
             'location'      => ['nullable', 'string', 'max:150'],
-            'mode'          => ['required', 'in:entrance,exit,both'],
+            'mode'          => ['required', 'in:entrance,exit,both,checkout'],
             'door_enabled'  => ['boolean'],
             'door_pulse_ms' => ['nullable', 'integer', 'min:500', 'max:15000'],
         ]) + ['door_enabled' => false, 'door_pulse_ms' => 3000];

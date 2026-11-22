@@ -43,6 +43,7 @@ Route::prefix('auth')->group(function () {
         Route::get('my-login-logs', [LoginLogController::class, 'mine']);
         Route::get('me', [AuthController::class, 'me']);
         Route::post('change-password', [AuthController::class, 'changePassword']);
+        Route::post('pin', [AuthController::class, 'setPin'])->middleware('throttle:5,1');
         Route::put('profile/account', [AccountController::class, 'update']);
         Route::post('profile/avatar', [AvatarController::class, 'update']);
         Route::delete('profile/avatar', [AvatarController::class, 'destroy']);
@@ -168,6 +169,7 @@ Route::middleware(['auth:sanctum', 'role:admin,librarian'])->prefix('member-acco
     Route::post('import', [MemberAccountController::class, 'import'])->middleware('throttle:10,1');
     Route::post('{member}/approve', [MemberAccountController::class, 'approve']);
     Route::post('{member}/reject', [MemberAccountController::class, 'reject']);
+    Route::get('{member}/id-document', [MemberAccountController::class, 'idDocument']);
 });
 
 Route::middleware('auth:sanctum')->get('/member/profile', [MemberController::class, 'myProfile']);
@@ -343,6 +345,11 @@ Route::middleware(['auth:sanctum', 'role:kiosk'])->prefix('kiosk')->group(functi
     Route::post('guest', [KioskController::class, 'guest'])->middleware('throttle:20,1');
     Route::get('guests', [KioskController::class, 'guests']);
     Route::post('guests/{visit}/out', [KioskController::class, 'guestOut']);
+
+    // Self-checkout (B4.16/17): card + PIN, then books
+    Route::post('self/start', [KioskController::class, 'selfStart'])->middleware('throttle:20,1');
+    Route::post('self/borrow', [KioskController::class, 'selfBorrow'])->middleware('throttle:60,1');
+    Route::post('self/finish', [KioskController::class, 'selfFinish']);
 });
 
 // Door controller (ESP32 + relay) polls with its own key; no user login.

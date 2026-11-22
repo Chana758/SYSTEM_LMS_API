@@ -35,6 +35,8 @@ class MembershipTypeRequest extends FormRequest
             'fine_per_day' => ['required', 'integer', 'min:0', 'max:100000'],
             // Riel; 0 = no deposit (B6.2)
             'deposit_amount' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            // Members of this type may borrow alone at the self-checkout kiosk
+            'self_checkout'  => ['nullable', 'boolean'],
         ];
     }
 

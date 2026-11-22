@@ -13,6 +13,7 @@ class MembershipType extends Model
     'code', 'label', 'description', 'is_active',
     'loan_days', 'max_books', 'max_renewals', 'renew_days', 'fine_per_day',
     'deposit_amount',
+    'self_checkout',
 ];
 
 protected $casts = [
@@ -23,6 +24,7 @@ protected $casts = [
     'renew_days'   => 'integer',
     'fine_per_day' => 'integer',
     'deposit_amount' => 'integer',
+    'self_checkout'  => 'boolean',
 ];
 
 /** Fallback used when a member has an unknown/legacy type code. */

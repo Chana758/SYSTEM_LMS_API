@@ -22,4 +22,6 @@ return [
     'RESET_ONLY_MEMBERS'         => 'បណ្ណារក្សអាច Reset បានតែគណនីសមាជិកប៉ុណ្ណោះ។',
     'MUST_CHANGE_PASSWORD'       => 'សូមប្តូរពាក្យសម្ងាត់ជាមុនសិន។',
     'IMPORT_DONE'                => 'បាន Import :count គណនី។',
+    'PIN_TOO_SIMPLE' => 'PIN នេះងាយទាយពេក។ សូមជ្រើសលេខផ្សេង។',
+    'PIN_SAVED'      => 'បានរក្សាទុក PIN។ អ្នកអាចខ្ចីសៀវភៅដោយខ្លួនឯងនៅ Kiosk បានហើយ។',
 ];
