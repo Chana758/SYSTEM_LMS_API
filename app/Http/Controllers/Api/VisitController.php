@@ -35,6 +35,16 @@ class VisitController extends Controller
             $query->whereNull('check_out_at');
         }
 
+        // Forgot to scan out (closed by the system at closing time)
+        if ($request->boolean('auto')) {
+            $query->where('check_out_method', 'auto');
+        }
+
+        // card | digital_card | school_card | guest | manual
+        if ($request->filled('method')) {
+            $query->where('check_in_method', $request->input('method'));
+        }
+
         if ($request->filled('search')) {
             $term = '%' . mb_strtolower($request->search) . '%';
             $query->where(function ($q) use ($term) {

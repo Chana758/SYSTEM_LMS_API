@@ -21,8 +21,10 @@ class LoginLogController extends Controller
 
         $query = LoginLog::with('user:id,name,email,role_id', 'user.role:id,name');
 
+        // One event, or several separated by commas ("login_failed,login_blocked")
         if ($request->filled('event')) {
-            $query->where('event', $request->event);
+            $events = array_filter(array_map('trim', explode(',', (string) $request->event)));
+            count($events) > 1 ? $query->whereIn('event', $events) : $query->where('event', $events[0] ?? '');
         }
         if ($request->filled('success')) {
             $query->where('success', $request->success === '1');
