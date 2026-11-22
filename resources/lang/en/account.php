@@ -2,6 +2,7 @@
 
 return [
     'ACCOUNT_PENDING'            => 'Your account is waiting for approval. Please bring your ID card to the front desk. You can browse books now, but you cannot borrow or reserve yet.',
+    'MEMBER_INACTIVE'            => 'This membership is switched off. Please contact the librarian.',
     'ACCOUNT_NOT_ACTIVATED'      => 'This account is not activated yet. Tap "Activate account" and use your student ID and date of birth, or visit the front desk.',
     'ACCOUNT_SUSPENDED'          => 'Your account is suspended. Please contact a librarian at the front desk.',
     'ACCOUNT_SUSPENDED_FINES'    => 'Your account is suspended because of unpaid fines of :amount KHR. Please pay at the front desk.',

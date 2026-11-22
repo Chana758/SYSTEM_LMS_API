@@ -51,9 +51,13 @@ class AccountStatusService
             return $this->reason('ACCOUNT_NOT_ACTIVATED');
         }
 
+        // "inactive" user = imported from the school list but no app password yet.
+        // That is about the app login only: the student stands at the desk (or uses
+        // the school card), so the desk may lend. Self-checkout still needs the PIN,
+        // which is only set when the student activates the account.
         return match (true) {
             $user->status === 'pending'   => $this->reason('ACCOUNT_PENDING'),
-            $user->status === 'inactive'  => $this->reason('ACCOUNT_NOT_ACTIVATED'),
+            $member->status === 'inactive' => $this->reason('MEMBER_INACTIVE'),
             $user->status === 'suspended' => $this->suspendedReason($user),
             $this->isExpired($member)     => $this->expiredReason($member),
             $member->deposit_status === 'unpaid' => $this->reason('DEPOSIT_UNPAID', ['amount' => number_format((float) $member->deposit_amount)], 'payments'),
