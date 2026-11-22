@@ -41,7 +41,9 @@ class VisitService
                 ->latest('check_in_at')
                 ->first();
 
-            $recent = $open && $open->check_in_at->gt(now()->subSeconds(VisitSettings::rescanSeconds()));
+            // Only a two-way kiosk needs the "just came in" guard; an exit-only kiosk always means leaving.
+            $recent = $open && $device->mode !== 'exit'
+                && $open->check_in_at->gt(now()->subSeconds(VisitSettings::rescanSeconds()));
 
             // Entrance-only kiosk, or a second scan right after coming in: still inside.
             if ($open && ($device->mode === 'entrance' || $recent)) {
