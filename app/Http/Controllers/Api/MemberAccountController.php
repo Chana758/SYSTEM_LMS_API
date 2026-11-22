@@ -146,13 +146,26 @@ class MemberAccountController extends Controller
             }
         }, $request->file('file'))[0] ?? [];
 
+        // A remote database (Neon) costs a round trip per query, so look up
+        // existing IDs and emails once for the whole file, not once per row.
+        @set_time_limit(300);
+
         $types = MembershipType::where('is_active', true)->pluck('max_books', 'code');
+        $normalized = array_map(fn ($raw) => $this->normalizeRow($raw), $sheet);
+        $fileIds = array_values(array_filter(array_map(fn ($r) => strtoupper($r['student_id']), $normalized)));
+        $fileEmails = array_values(array_filter(array_map(fn ($r) => $r['email'], $normalized)));
+        $takenIds = $fileIds
+            ? Member::withTrashed()->whereIn(DB::raw('UPPER(student_id)'), $fileIds)->pluck('student_id')
+                ->map(fn ($id) => strtoupper($id))->flip()->all()
+            : [];
+        $takenEmails = $fileEmails
+            ? User::withTrashed()->whereIn(DB::raw('LOWER(email)'), $fileEmails)->pluck('email')
+                ->map(fn ($e) => strtolower($e))->flip()->all()
+            : [];
         $seenIds = [];
         $rows = [];
 
-        foreach ($sheet as $index => $raw) {
-            $row = $this->normalizeRow($raw);
-
+        foreach ($normalized as $index => $row) {
             if ($row['student_id'] === '' && $row['name'] === '') {
                 continue; // empty line
             }
@@ -163,7 +176,7 @@ class MemberAccountController extends Controller
                 $errors[] = 'student_id is required';
             } elseif (isset($seenIds[$row['student_id']])) {
                 $errors[] = 'student_id appears twice in the file';
-            } elseif (Member::withTrashed()->where('student_id', $row['student_id'])->exists()) {
+            } elseif (isset($takenIds[strtoupper($row['student_id'])])) {
                 $errors[] = 'student_id already exists';
             }
 
@@ -182,7 +195,7 @@ class MemberAccountController extends Controller
             if ($row['email'] !== '') {
                 if (! filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
                     $errors[] = 'email is not valid';
-                } elseif (User::withTrashed()->whereRaw('LOWER(email) = ?', [$row['email']])->exists()) {
+                } elseif (isset($takenEmails[$row['email']])) {
                     $errors[] = 'email already exists';
                 }
             }
@@ -205,15 +218,20 @@ class MemberAccountController extends Controller
 
         $memberRole = Role::firstOrCreate(['name' => 'member']);
 
-        DB::transaction(function () use ($rows, $memberRole, $types) {
-            foreach ($rows as $r) {
+        // Imported accounts cannot log in until the student activates (B2.2), so one
+        // hash of a random secret serves every row; bcrypt per row would cost seconds.
+        $lockedPassword = Hash::make(Str::random(40));
+        $numbers = $this->generateMembershipNos(count($rows));
+
+        DB::transaction(function () use ($rows, $memberRole, $types, $lockedPassword, $numbers) {
+            foreach ($rows as $i => $r) {
                 $d = $r['data'];
 
                 // Status "inactive": the student activates it with student ID + date of birth (B2.2).
                 $user = User::create([
                     'name'     => $d['name'],
                     'email'    => $d['email'] ?: null,
-                    'password' => Hash::make(Str::random(40)),
+                    'password' => $lockedPassword,
                     'phone'    => $d['phone'] ?: null,
                     'role_id'  => $memberRole->id,
                     'status'   => 'inactive',
@@ -221,7 +239,7 @@ class MemberAccountController extends Controller
 
                 Member::create([
                     'user_id'          => $user->id,
-                    'membership_no'    => $this->generateMembershipNo(),
+                    'membership_no'    => $numbers[$i],
                     'student_id'       => $d['student_id'],
                     'name_en'          => $d['name_en'] ?: null,
                     'gender'           => $d['gender'],
@@ -308,6 +326,29 @@ class MemberAccountController extends Controller
         }
 
         return $out;
+    }
+
+    /** $count unique membership numbers, checked against the database in one query. */
+    private function generateMembershipNos(int $count): array
+    {
+        $numbers = [];
+        while (count($numbers) < $count) {
+            $batch = [];
+            while (count($batch) + count($numbers) < $count) {
+                $no = 'MEM-' . date('Y') . '-' . str_pad(random_int(1, 999999), 6, '0', STR_PAD_LEFT);
+                if (! isset($numbers[$no])) {
+                    $batch[$no] = true;
+                }
+            }
+            $taken = Member::withTrashed()->whereIn('membership_no', array_keys($batch))->pluck('membership_no')->flip();
+            foreach (array_keys($batch) as $no) {
+                if (! isset($taken[$no])) {
+                    $numbers[$no] = true;
+                }
+            }
+        }
+
+        return array_keys($numbers);
     }
 
     private function generateMembershipNo(): string
